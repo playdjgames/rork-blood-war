@@ -793,4 +793,76 @@ final class GameStore: ObservableObject {
             writeRegistry(reg)
         }
     }
+
+    // MARK: - Player name
+
+    private let nameClaimsKey = "bw.nameClaims"
+
+    /// Every name in use on this device, lowercased: the player's own, every
+    /// name the player has ever claimed, and the rival holds' names.
+    private func nameClaims() -> Set<String> {
+        var claims = Set(defaults.stringArray(forKey: nameClaimsKey) ?? [])
+        claims.insert(game.playerName.lowercased())
+        claims.formUnion(["hold 1", "hold 2", "hold 3"])
+        return claims
+    }
+
+    private func writeNameClaims(_ claims: Set<String>) {
+        defaults.set(Array(claims), forKey: nameClaimsKey)
+    }
+
+    /// True when `raw` can become the player's name: 2–18 characters after
+    /// trimming, not already in use.
+    func isNameAvailable(_ raw: String) -> Bool {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.count >= 2, trimmed.count <= 18 else { return false }
+        return !nameClaims().contains(trimmed.lowercased())
+    }
+
+    /// Claims a new player name. Returns a red error line, or nil on success.
+    /// A name stays claimed after being released, so no name is ever reused
+    /// by a different player on this device.
+    @discardableResult
+    func setName(_ raw: String) -> String? {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.count >= 2, trimmed.count <= 18 else { return "2 to 18 characters." }
+        if trimmed == game.playerName { return nil }
+        let key = trimmed.lowercased()
+        guard key != game.playerName.lowercased() else {
+            game.playerName = trimmed
+            save()
+            return nil
+        }
+        guard !nameClaims().contains(key) else { return "That name is already in use." }
+        var claims = nameClaims()
+        claims.remove(game.playerName.lowercased())
+        claims.insert(key)
+        writeNameClaims(claims)
+        game.playerName = trimmed
+        save()
+        return nil
+    }
+
+    /// Alternates for a taken name — the name with digits or letters appended.
+    func suggestNames(for raw: String) -> [String] {
+        let base = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        var claims = nameClaims()
+        let digits = "0123456789"
+        let letters = "abcdefghijkmnpqrstuvwxyz"
+        var out: [String] = []
+        while out.count < 3 {
+            let tail: String
+            switch out.count {
+            case 0: tail = String((0..<2).map { _ in digits.randomElement()! })
+            case 1: tail = String((0..<3).map { _ in letters.randomElement()! })
+            default: tail = String((0..<4).map { _ in digits.randomElement()! })
+            }
+            let s = base + tail
+            if !claims.contains(s.lowercased()) {
+                claims.insert(s.lowercased())
+                out.append(s)
+            }
+        }
+        return out
+    }
 }

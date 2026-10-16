@@ -146,12 +146,15 @@ struct StampIcon: View {
 
 // MARK: - Resource bar
 
-/// Fixed under the status bar, 36 points tall, never scrolls away.
+/// Fixed under the status bar, 36 points tall, never scrolls away. The
+/// leftmost cell is the player's name — tap it to rename.
 struct ResourceBar: View {
     @EnvironmentObject var store: GameStore
+    @State private var renaming = false
 
     var body: some View {
         HStack(spacing: 0) {
+            nameplate
             cell("food", "Food")
             cell("wood", "Wood")
             cell("stone", "Stone")
@@ -161,22 +164,43 @@ struct ResourceBar: View {
         .frame(height: 36)
         .background(BW.panelDark)
         .overlay(alignment: .bottom) { Rectangle().fill(BW.stroke).frame(height: 1) }
+        .sheet(isPresented: $renaming) {
+            RenameSheet()
+                .presentationDetents([.height(340)])
+        }
+    }
+
+    /// The player's name — tap to rename.
+    private var nameplate: some View {
+        Button(action: { renaming = true }) {
+            HStack(spacing: 4) {
+                Image(systemName: "person.crop.circle.fill")
+                    .font(.system(size: 12, weight: .medium))
+                Text(store.game.playerName)
+                    .font(.system(size: 11, weight: .bold))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.5)
+            }
+            .foregroundColor(BW.text)
+            .padding(.horizontal, 6)
+            .frame(width: 84, height: 36)
+            .background(BW.panel)
+            .contentShape(Rectangle())
+        }
+        .overlay(alignment: .trailing) { Rectangle().fill(BW.stroke).frame(width: 1) }
+        .accessibilityLabel("Your name, \(store.game.playerName)")
     }
 
     private func cell(_ resource: String, _ label: String) -> some View {
         let amount = store.game.resources.value(resource)
         let atCap = amount >= store.game.storageCap
-        return HStack(spacing: 3) {
+        return HStack(spacing: 4) {
             StampIcon(name: resource, size: 11)
-            Text(label)
-                .font(.system(size: 8.5, weight: .medium))
-                .foregroundColor(BW.subtext)
-            Spacer(minLength: 2)
             Text(store.comma(amount))
-                .font(.system(size: 10.5, weight: .bold, design: .monospaced))
+                .font(.system(size: 11, weight: .bold, design: .monospaced))
                 .foregroundColor(atCap ? BW.red : BW.text)
                 .lineLimit(1)
-                .minimumScaleFactor(0.7)
+                .minimumScaleFactor(0.5)
         }
         .padding(.horizontal, 5)
         .accessibilityElement(children: .ignore)
@@ -255,5 +279,80 @@ extension Color {
             blue: Double(hex & 0xFF) / 255.0,
             opacity: 1
         )
+    }
+}
+
+// MARK: - Rename sheet
+
+/// Set the player's name. Names are unique on this device — a taken name
+/// comes back with an error and alternate suggestions (digits or letters
+/// appended), one tap to claim.
+struct RenameSheet: View {
+    @EnvironmentObject var store: GameStore
+    @Environment(\.dismiss) private var dismiss
+    @State private var name = ""
+    @State private var error: String?
+    @State private var suggestions: [String] = []
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("YOUR NAME")
+                .font(.system(size: 12, weight: .bold))
+                .foregroundColor(BW.subtext)
+            TextField("Name", text: $name)
+                .textFieldStyle(.plain)
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundColor(BW.text)
+                .padding(.horizontal, 12)
+                .frame(height: 44)
+                .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(BW.panelDark))
+                .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .strokeBorder(BW.stroke, lineWidth: 1))
+                .focused($focused)
+                .submitLabel(.done)
+                .autocorrectionDisabled()
+                .textInputAutocapitalization(.words)
+                .onChange(of: name) { _, newName in
+                    if newName.count > 18 { name = String(newName.prefix(18)) }
+                }
+            if let error {
+                Text(error)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundColor(BW.red)
+            }
+            if !suggestions.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Already used — take one of these:")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(BW.subtext)
+                    HStack(spacing: 8) {
+                        ForEach(suggestions, id: \.self) { suggestion in
+                            SlateButtonSmall(title: suggestion) {
+                                name = suggestion
+                                error = nil
+                                suggestions = []
+                            }
+                        }
+                    }
+                }
+            }
+            SlateButton(title: "Set name") {
+                if let failure = store.setName(name) {
+                    error = failure
+                    if failure.contains("in use") { suggestions = store.suggestNames(for: name) }
+                } else {
+                    dismiss()
+                }
+            }
+            Spacer()
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .background(BW.background)
+        .onAppear {
+            name = store.game.playerName
+            focused = true
+        }
     }
 }
