@@ -1,0 +1,13 @@
+{
+  "$schema": "https://rork.com/schema/rork.json",
+  "apps": [
+    {
+      "name": "Blood War",
+      "path": "ios-ashgard-hold",
+      "framework": "swift",
+      "settings": {
+        "displayName": "Blood War"
+      }
+    }
+  ]
+}
