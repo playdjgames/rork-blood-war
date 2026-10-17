@@ -44,7 +44,6 @@ struct BloodWarTests {
         #expect(g.keepLevel == 1)
         #expect(g.x == 25 && g.y == 25)
         #expect(g.resources == Resources(food: 1000, wood: 1000, stone: 1000, iron: 500, gold: 100))
-        #expect(g.storageCap == 5000)
         #expect(g.buildings.count == 14)
         #expect(g.buildings.allSatisfy { $0.level == 1 })
         #expect(g.troops == TroopCounts(footman: 20, archer: 10, rider: 0, ram: 0))
@@ -217,7 +216,6 @@ struct BloodWarTests {
         clock.t += 180_000 // level 6 × 30 s
         store.tick()
         #expect(store.level("Vault") == 7)
-        #expect(store.game.storageCap == 7000)
     }
 
     // MARK: 6. Training
@@ -459,10 +457,6 @@ struct BloodWarTests {
         #expect(store.game.resources.food == 1020) // Farm 20/min
         #expect(store.game.resources.iron == 520) // Mine 20/min
         #expect(store.game.resources.gold == 105) // Vault 5/min
-        store.inject { g in g.resources.food = g.storageCap } // at cap
-        clock.t += 60_000
-        store.tick()
-        #expect(store.game.resources.food == 5000) // never over the cap
     }
 
     @Test func offlineCatchUpCapsAtFourHours() {
@@ -470,7 +464,7 @@ struct BloodWarTests {
         let (store, _, _) = makeStore(clock)
         clock.t += 6 * 3_600_000 // six hours away
         store.tick()
-        // 240 minutes of Farm 20 = 4800, added to 1000 → capped at 5000.
-        #expect(store.game.resources.food == 5000)
+        // Production is clamped to 4 h: 240 minutes of Farm 20 = 4800 + 1000.
+        #expect(store.game.resources.food == 5800)
     }
 }

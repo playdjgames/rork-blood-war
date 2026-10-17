@@ -282,7 +282,6 @@ struct SaveRecord: Codable, Equatable {
     var x: Int
     var y: Int
     var resources: Resources
-    var storageCap: Int
     var buildings: [Building]
     var troops: TroopCounts
     var wounded: TroopCounts
@@ -309,7 +308,6 @@ extension SaveRecord {
         x = try c.decode(Int.self, forKey: .x)
         y = try c.decode(Int.self, forKey: .y)
         resources = try c.decode(Resources.self, forKey: .resources)
-        storageCap = try c.decode(Int.self, forKey: .storageCap)
         buildings = try c.decode([Building].self, forKey: .buildings)
         troops = try c.decode(TroopCounts.self, forKey: .troops)
         wounded = try c.decode(TroopCounts.self, forKey: .wounded)

@@ -194,12 +194,11 @@ struct ResourceBar: View {
 
     private func cell(_ resource: String, _ label: String) -> some View {
         let amount = store.game.resources.value(resource)
-        let atCap = amount >= store.game.storageCap
         return HStack(spacing: 4) {
             StampIcon(name: resource, size: 11)
             Text(store.comma(amount))
                 .font(.system(size: 11, weight: .bold, design: .monospaced))
-                .foregroundColor(atCap ? BW.red : BW.text)
+                .foregroundColor(BW.text)
                 .lineLimit(1)
                 .minimumScaleFactor(0.5)
         }

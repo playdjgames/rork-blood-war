@@ -141,7 +141,6 @@ final class GameStore: ObservableObject {
             x: 25,
             y: 25,
             resources: Resources(food: 1000, wood: 1000, stone: 1000, iron: 500, gold: 100),
-            storageCap: 5000,
             buildings: buildings,
             troops: TroopCounts(footman: 20, archer: 10, rider: 0, ram: 0),
             wounded: .zero,
@@ -292,7 +291,7 @@ final class GameStore: ObservableObject {
         tick()
     }
 
-    /// Adds per-minute production for elapsed minutes, capped at 4 h and storageCap.
+    /// Adds per-minute production for elapsed minutes, capped at 4 h.
     private func runProduction(_ t: Double) -> Bool {
         let last = defaults.double(forKey: lastProductionKey)
         guard t >= last + 60_000 else { return false }
@@ -301,8 +300,7 @@ final class GameStore: ObservableObject {
         for resource in ["food", "wood", "stone", "iron", "gold"] {
             let gain = productionPerMinute(resource) * minutes
             guard gain > 0 else { continue }
-            let room = game.storageCap - game.resources.value(resource)
-            if room > 0 { game.resources.add(resource, min(gain, room)) }
+            game.resources.add(resource, gain)
         }
         defaults.set(minutes < 240 ? last + Double(minutes) * 60_000 : t, forKey: lastProductionKey)
         return minutes > 0
@@ -336,9 +334,6 @@ final class GameStore: ObservableObject {
         game.upgrade = nil
         if up.buildingName == "Keep" {
             game.keepLevel = level("Keep")
-        }
-        if up.buildingName == "Vault" {
-            game.storageCap = max(5000, level("Vault") * 1000)
         }
         return true
     }
@@ -405,8 +400,7 @@ final class GameStore: ObservableObject {
         if let i = game.mapTiles.firstIndex(where: { $0.x == m.toX && $0.y == m.toY }) {
             game.mapTiles[i].remaining = remaining - amount
         }
-        let room = game.storageCap - game.resources.value(resource)
-        game.resources.add(resource, min(amount, max(0, room)))
+        game.resources.add(resource, amount)
     }
 
     /// Combat on arrival: strict-greater wins. Wounds 5% of the sent stack
@@ -424,14 +418,14 @@ final class GameStore: ObservableObject {
         }
         let win = my > target
         if win, m.job == .attack {
-            game.resources.gold = min(game.resources.gold + 100, game.storageCap)
+            game.resources.gold += 100
         }
         if win, m.job == .attackHold, let h = holdRef,
            let hi = game.holds.firstIndex(where: { $0.id == h.id }) {
             let food = Int(floor(Double(game.holds[hi].food) * 0.1))
             let wood = Int(floor(Double(game.holds[hi].wood) * 0.1))
-            game.resources.food = min(game.resources.food + food, game.storageCap)
-            game.resources.wood = min(game.resources.wood + wood, game.storageCap)
+            game.resources.food += food
+            game.resources.wood += wood
             game.holds[hi].food -= food
             game.holds[hi].wood -= wood
             game.holds[hi].shieldUntil = t + 300_000
@@ -544,13 +538,11 @@ final class GameStore: ObservableObject {
 
     // MARK: - Purchased boosts
 
-    /// Credits a purchased supply bundle, every pile capped at storage.
+    /// Credits a purchased supply bundle in full — the storehouse has no cap.
     func grantBundle(food: Int, wood: Int, stone: Int, iron: Int) {
         for (resource, amount) in [("food", food), ("wood", wood),
                                    ("stone", stone), ("iron", iron)] {
-            let room = game.storageCap - game.resources.value(resource)
-            guard room > 0 else { continue }
-            game.resources.add(resource, min(amount, room))
+            game.resources.add(resource, amount)
         }
         addLog("Supplies delivered to the storehouse.")
         save()
@@ -580,9 +572,6 @@ final class GameStore: ObservableObject {
         game.upgrade = nil
         if up.buildingName == "Keep" {
             game.keepLevel = level("Keep")
-        }
-        if up.buildingName == "Vault" {
-            game.storageCap = max(5000, level("Vault") * 1000)
         }
         save()
         return nil
