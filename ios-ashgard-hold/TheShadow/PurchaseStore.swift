@@ -17,6 +17,7 @@ enum ShopProductID {
     static let supplyWagon = "bw_supply_wagon"
     static let speedUp1h = "bw_speedup_1h"
     static let instantFinish = "bw_instant_finish"
+    static let fillGap = "bw_fill_gap"
 }
 
 /// Shared purchase state: fetches the current offering and sells every

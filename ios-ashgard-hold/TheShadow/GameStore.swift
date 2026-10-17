@@ -588,6 +588,36 @@ final class GameStore: ObservableObject {
         return nil
     }
 
+    /// Exactly what the player is short of for the next upgrade of a
+    /// building, or nil when they can already afford it.
+    func upgradeShortfall(_ name: String) -> Resources? {
+        guard let b = building(name) else { return nil }
+        let cost = upgradeCost(b.level)
+        var missing = Resources.zero
+        var any = false
+        for resource in ["food", "wood", "stone", "iron"] {
+            let gap = max(0, cost.value(resource) - game.resources.value(resource))
+            if gap > 0 {
+                missing.add(resource, gap)
+                any = true
+            }
+        }
+        return any ? missing : nil
+    }
+
+    /// Credits exactly the missing materials for the next upgrade (paid fill).
+    @discardableResult
+    func grantUpgradeGap(_ name: String) -> String? {
+        guard !game.victory else { return "Game over." }
+        guard let missing = upgradeShortfall(name) else { return "Nothing missing." }
+        for resource in ["food", "wood", "stone", "iron"] where missing.value(resource) > 0 {
+            game.resources.add(resource, missing.value(resource))
+        }
+        addLog("Materials bought for the \(name).")
+        save()
+        return nil
+    }
+
     // MARK: - Training & healing
 
     /// Max count the player can afford of a troop type right now.

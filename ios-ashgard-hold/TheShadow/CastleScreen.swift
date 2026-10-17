@@ -568,6 +568,15 @@ struct BuildingUpgradeSheet: View {
             }
             if buildingName == "Keep" { KeepActions() }
             if let e = error { Text(e).redLine() }
+            if store.game.upgrade == nil,
+               let missing = store.upgradeShortfall(buildingName) {
+                shopRow(title: "Missing materials",
+                        detail: missingLine(missing),
+                        productID: ShopProductID.fillGap, fallback: "$0.99") {
+                    if let e = store.grantUpgradeGap(buildingName) { return e }
+                    return store.upgrade(buildingName)
+                }
+            }
             upgradeButton
             shopSection
             Spacer(minLength: 0)
@@ -619,6 +628,14 @@ struct BuildingUpgradeSheet: View {
                 error = store.upgrade(buildingName)
             }
         }
+    }
+
+    /// "400 food · 200 wood" — the exact shortfall for the next upgrade.
+    private func missingLine(_ missing: Resources) -> String {
+        ["food", "wood", "stone", "iron"].compactMap { resource -> String? in
+            let gap = missing.value(resource)
+            return gap > 0 ? "\(store.comma(gap)) \(resource)" : nil
+        }.joined(separator: " · ")
     }
 
     /// Supply bundles, purchasable any time.
