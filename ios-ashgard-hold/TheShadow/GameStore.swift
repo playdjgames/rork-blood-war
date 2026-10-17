@@ -605,6 +605,17 @@ final class GameStore: ObservableObject {
         return any ? missing : nil
     }
 
+    /// The shortfall as a fraction of one Supply Sack's contents
+    /// (1000 food, 1000 wood, 750 stone, 500 iron). Drives the fill price.
+    func upgradeShortfallFraction(_ name: String) -> Double? {
+        guard let missing = upgradeShortfall(name) else { return nil }
+        let foodFraction = Double(missing.food) / 1000.0
+        let woodFraction = Double(missing.wood) / 1000.0
+        let stoneFraction = Double(missing.stone) / 750.0
+        let ironFraction = Double(missing.iron) / 500.0
+        return max(foodFraction, woodFraction, stoneFraction, ironFraction)
+    }
+
     /// Credits exactly the missing materials for the next upgrade (paid fill).
     @discardableResult
     func grantUpgradeGap(_ name: String) -> String? {

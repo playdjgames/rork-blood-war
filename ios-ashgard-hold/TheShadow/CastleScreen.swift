@@ -570,9 +570,16 @@ struct BuildingUpgradeSheet: View {
             if let e = error { Text(e).redLine() }
             if store.game.upgrade == nil,
                let missing = store.upgradeShortfall(buildingName) {
-                shopRow(title: "Missing materials",
-                        detail: missingLine(missing),
-                        productID: ShopProductID.fillGap, fallback: "$0.99") {
+                // Price off the bundles: the shortfall as a fraction of a
+                // Supply Sack decides the tier; the detail line shows the
+                // bundle value of what's missing.
+                let fraction = store.upgradeShortfallFraction(buildingName) ?? 0
+                let big = fraction > 0.4
+                let estimate = String(format: "bundle value ≈ $%.2f", fraction * 0.99)
+                shopRow(title: big ? "Missing materials (large)" : "Missing materials",
+                        detail: "\(missingLine(missing)) — \(estimate)",
+                        productID: big ? ShopProductID.fillGapBig : ShopProductID.fillGap,
+                        fallback: big ? "$1.99" : "$0.99") {
                     if let e = store.grantUpgradeGap(buildingName) { return e }
                     return store.upgrade(buildingName)
                 }
