@@ -127,7 +127,7 @@ final class GameStore: ObservableObject {
         let buildings = buildingOrder.map { Building(name: $0, level: 1) }
         let holds = holdSpots.enumerated().map { i, spot in
             Hold(name: "Hold \(i + 1)", x: spot.0, y: spot.1, power: 800,
-                 food: 2000, wood: 2000, shieldUntil: 0)
+                 food: 2000, wood: 2000, shieldUntil: 0, owner: nil)
         }
         let heroes = [
             Hero(name: "Bram", title: "the Stone", level: 1, assignedMarchId: nil),
@@ -154,7 +154,9 @@ final class GameStore: ObservableObject {
             holds: holds,
             mapTiles: tiles,
             alliance: nil,
-            log: []
+            log: [],
+            victory: false,
+            victoryWinner: nil
         )
     }
 
@@ -433,6 +435,15 @@ final class GameStore: ObservableObject {
             game.holds[hi].food -= food
             game.holds[hi].wood -= wood
             game.holds[hi].shieldUntil = t + 300_000
+            let newOwner = game.alliance != nil ? game.alliance!.code : game.playerName
+            game.holds[hi].owner = newOwner
+            addLog("\(game.holds[hi].name) taken by \(newOwner).")
+            let owned = game.holds.filter { $0.owner == newOwner }.count
+            if owned >= 5 {
+                game.victory = true
+                game.victoryWinner = newOwner
+                addLog("Victory — \(newOwner) controls 5 holds.")
+            }
         }
         let woundedOut = applyWounds(m.troops)
         var out = m
@@ -507,6 +518,7 @@ final class GameStore: ObservableObject {
     /// Tries to start an upgrade. Returns the red error line, or nil on success.
     @discardableResult
     func upgrade(_ name: String) -> String? {
+        guard !game.victory else { return "Game over." }
         let t = now()
         guard game.upgrade == nil else { return "Busy" }
         guard let b = building(name) else { return nil }
@@ -562,6 +574,7 @@ final class GameStore: ObservableObject {
     /// Trains `count` of a type into the single queue. Returns a red error line or nil.
     @discardableResult
     func train(_ type: String, count: Int) -> String? {
+        guard !game.victory else { return "Game over." }
         guard count > 0 else { return nil }
         guard let spec = Self.troopSpecs[type] else { return nil }
         guard level(spec.building) >= 1 else { return nil }
@@ -582,6 +595,7 @@ final class GameStore: ObservableObject {
     /// Heals `count` wounded of a type (half cost, 3 s each, shared queue).
     @discardableResult
     func heal(_ type: String, count: Int) -> String? {
+        guard !game.victory else { return "Game over." }
         guard count > 0 else { return nil }
         guard game.wounded.value(type) >= count else { return nil }
         guard game.training.isEmpty else { return "Busy" }
@@ -602,6 +616,7 @@ final class GameStore: ObservableObject {
 
     @discardableResult
     func study(_ field: ResearchField) -> String? {
+        guard !game.victory else { return "Game over." }
         guard level("Academy") >= 1 else { return nil }
         let already: Bool
         switch field {
@@ -635,6 +650,7 @@ final class GameStore: ObservableObject {
 
     @discardableResult
     func levelUp(hero name: String) -> String? {
+        guard !game.victory else { return "Game over." }
         guard let i = game.heroes.firstIndex(where: { $0.name == name }) else { return nil }
         guard game.heroes[i].level < 5 else { return "Max" }
         guard game.heroes[i].assignedMarchId == nil else { return nil }
@@ -654,6 +670,7 @@ final class GameStore: ObservableObject {
     @discardableResult
     func sendMarch(toX: Int, toY: Int, job: MarchJob,
                    troops: TroopCounts, heroName: String?) -> String? {
+        guard !game.victory else { return "Game over." }
         let t = now()
         guard game.marches.count < 3 else { return "Marches allowed: 3" }
         guard troops.footman <= game.troops.footman,
@@ -681,6 +698,7 @@ final class GameStore: ObservableObject {
     /// Scout: no troops, no hero, logs on arrival and returns.
     @discardableResult
     func scout(x: Int, y: Int) -> String? {
+        guard !game.victory else { return "Game over." }
         guard game.marches.count < 3 else { return "Marches allowed: 3" }
         return sendMarch(toX: x, toY: y, job: .scout, troops: .zero, heroName: nil)
     }
@@ -694,11 +712,13 @@ final class GameStore: ObservableObject {
     // MARK: - Shield
 
     func raiseShield() {
+        guard !game.victory else { return }
         game.shieldUntil = now() + 900_000
         save()
     }
 
     func dropShield() {
+        guard !game.victory else { return }
         game.shieldUntil = 0
         save()
     }
@@ -720,6 +740,7 @@ final class GameStore: ObservableObject {
     /// Creates an alliance with a 5-letter code. Returns a red error line or nil.
     @discardableResult
     func createAlliance(name: String) -> String? {
+        guard !game.victory else { return "Game over." }
         let trimmed = name.trimmingCharacters(in: .whitespaces)
         guard trimmed.count >= 3, trimmed.count <= 16, trimmed.allSatisfy({ $0.isLetter }) else {
             return "3 to 16 letters"
@@ -740,6 +761,7 @@ final class GameStore: ObservableObject {
     /// Joins by code. Only codes created on this device work.
     @discardableResult
     func joinAlliance(code: String) -> String? {
+        guard !game.victory else { return "Game over." }
         guard game.alliance == nil else { return nil }
         var reg = registry()
         guard var record = reg[code.uppercased()] else { return "No code match." }
@@ -754,6 +776,7 @@ final class GameStore: ObservableObject {
     }
 
     func post(_ text: String) {
+        guard !game.victory else { return }
         guard var a = game.alliance, !text.trimmingCharacters(in: .whitespaces).isEmpty else { return }
         a.board.append(AlliancePost(at: now(), author: game.playerName,
                                     text: text.trimmingCharacters(in: .whitespaces)))
@@ -764,6 +787,7 @@ final class GameStore: ObservableObject {
     }
 
     func removeMember(_ name: String) {
+        guard !game.victory else { return }
         guard var a = game.alliance, a.owner == game.playerName, name != a.owner else { return }
         a.members.removeAll { $0 == name }
         game.alliance = a

@@ -196,6 +196,7 @@ struct Hold: Codable, Equatable, Identifiable {
     var food: Int
     var wood: Int
     var shieldUntil: Double
+    var owner: String?
     var id: String { name }
 }
 
@@ -295,4 +296,34 @@ struct SaveRecord: Codable, Equatable {
     var mapTiles: [MapTile]
     var alliance: AllianceRecord?
     var log: [String]
+    var victory: Bool
+    var victoryWinner: String?
+}
+
+/// Saves written before victory existed load with victory false.
+extension SaveRecord {
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        playerName = try c.decode(String.self, forKey: .playerName)
+        keepLevel = try c.decode(Int.self, forKey: .keepLevel)
+        x = try c.decode(Int.self, forKey: .x)
+        y = try c.decode(Int.self, forKey: .y)
+        resources = try c.decode(Resources.self, forKey: .resources)
+        storageCap = try c.decode(Int.self, forKey: .storageCap)
+        buildings = try c.decode([Building].self, forKey: .buildings)
+        troops = try c.decode(TroopCounts.self, forKey: .troops)
+        wounded = try c.decode(TroopCounts.self, forKey: .wounded)
+        training = try c.decode([TrainingRecord].self, forKey: .training)
+        upgrade = try c.decodeIfPresent(UpgradeState.self, forKey: .upgrade)
+        marches = try c.decode([March].self, forKey: .marches)
+        research = try c.decode(ResearchState.self, forKey: .research)
+        heroes = try c.decode([Hero].self, forKey: .heroes)
+        shieldUntil = try c.decode(Double.self, forKey: .shieldUntil)
+        holds = try c.decode([Hold].self, forKey: .holds)
+        mapTiles = try c.decode([MapTile].self, forKey: .mapTiles)
+        alliance = try c.decodeIfPresent(AllianceRecord.self, forKey: .alliance)
+        log = try c.decode([String].self, forKey: .log)
+        victory = try c.decodeIfPresent(Bool.self, forKey: .victory) ?? false
+        victoryWinner = try c.decodeIfPresent(String.self, forKey: .victoryWinner)
+    }
 }

@@ -33,6 +33,11 @@ struct ContentView: View {
         .safeAreaInset(edge: .bottom, spacing: 0) {
             BWTabBar(tab: $tab)
         }
+        .overlay {
+            if store.game.victory {
+                VictoryOverlay()
+            }
+        }
         .environmentObject(store)
         .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { _ in
             store.tick()
@@ -40,5 +45,37 @@ struct ContentView: View {
         .onChange(of: scenePhase) { _, phase in
             if phase != .active { store.save() }
         }
+    }
+}
+
+/// Full-screen victory: the winner and every hold's owner. No buttons, no dismiss.
+struct VictoryOverlay: View {
+    @EnvironmentObject var store: GameStore
+
+    var body: some View {
+        ZStack {
+            Color.black.opacity(0.94)
+                .ignoresSafeArea()
+            VStack(spacing: 20) {
+                Text("Victory — \(store.game.victoryWinner ?? "") controls 5 holds")
+                    .font(.system(size: 30, weight: .bold))
+                    .foregroundColor(.white)
+                    .multilineTextAlignment(.center)
+                VStack(spacing: 8) {
+                    ForEach(store.game.holds) { hold in
+                        HStack {
+                            Text(hold.name)
+                                .font(.system(size: 16, weight: .semibold))
+                            Spacer()
+                            Text(hold.owner ?? "Unclaimed")
+                                .font(.system(size: 16, weight: .regular))
+                        }
+                        .foregroundColor(.white)
+                    }
+                }
+            }
+            .padding(24)
+        }
+        .contentShape(Rectangle())
     }
 }
