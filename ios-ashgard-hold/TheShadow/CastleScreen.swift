@@ -663,6 +663,18 @@ struct BuildingUpgradeSheet: View {
                 store.grantBundle(food: 3000, wood: 3000, stone: 2250, iron: 1500)
                 return nil
             }
+            shopRow(title: "Supply Cart",
+                    detail: "6,000 food · 6,000 wood · 4,500 stone · 3,000 iron",
+                    productID: ShopProductID.supplyCart, fallback: "$4.99") {
+                store.grantBundle(food: 6000, wood: 6000, stone: 4500, iron: 3000)
+                return nil
+            }
+            shopRow(title: "Supply Convoy",
+                    detail: "14,000 food · 14,000 wood · 10,500 stone · 7,000 iron",
+                    productID: ShopProductID.supplyConvoy, fallback: "$9.99") {
+                store.grantBundle(food: 14000, wood: 14000, stone: 10500, iron: 7000)
+                return nil
+            }
             Button {
                 Task { await purchases.restore() }
             } label: {
