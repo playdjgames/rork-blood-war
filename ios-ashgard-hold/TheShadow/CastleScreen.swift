@@ -567,6 +567,12 @@ struct BuildingUpgradeSheet: View {
                     .foregroundColor(BW.subtext)
             }
             if buildingName == "Keep" { KeepActions() }
+            if isPlot, let pending = store.game.buildings.first(where: { $0.name == buildingName })?.pending,
+               pending > 0 {
+                SlateButton(title: "Collect \(store.comma(pending))") {
+                    _ = store.collect(buildingName)
+                }
+            }
             if let e = error { Text(e).redLine() }
             if store.game.upgrade == nil,
                let missing = store.upgradeShortfall(buildingName) {
@@ -597,10 +603,10 @@ struct BuildingUpgradeSheet: View {
     private var lines: [String] {
         let lvl = store.level(buildingName)
         switch buildingName {
-        case "Farm": return ["Food per minute: \(lvl * 20)"]
-        case "Timber yard": return ["Wood per minute: \(lvl * 20)"]
-        case "Quarry": return ["Stone per minute: \(lvl * 20)"]
-        case "Mine": return ["Iron per minute: \(lvl * 20)"]
+        case "Farm": return plotLines("food", lvl)
+        case "Timber yard": return plotLines("wood", lvl)
+        case "Quarry": return plotLines("stone", lvl)
+        case "Mine": return plotLines("iron", lvl)
         case "Vault": return ["Gold per minute: \(lvl * 5)",
                               "Protects \(store.comma(lvl * 500)) of each material from raids"]
         case "Barracks": return ["Trains Footmen"]
@@ -614,6 +620,16 @@ struct BuildingUpgradeSheet: View {
         case "Keep": return ["Caps all buildings"]
         default: return []
         }
+    }
+
+    /// The four production plots hold their yield on the lot until collected.
+    private var isPlot: Bool { GameStore.plotResource[buildingName] != nil }
+
+    private func plotLines(_ resource: String, _ lvl: Int) -> [String] {
+        let waiting = store.game.buildings.first(where: { $0.name == buildingName })?.pending ?? 0
+        return ["\(resource.capitalized) per minute: \(lvl * 20)",
+                "Safe on the lot until collected — raids only take storehouse stock."]
+            + (waiting > 0 ? ["Waiting on the lot: \(store.comma(waiting))"] : [])
     }
 
     @ViewBuilder private var upgradeButton: some View {

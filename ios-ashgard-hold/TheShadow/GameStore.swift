@@ -202,6 +202,10 @@ final class GameStore: ObservableObject {
 
     var isBusy: Bool { game.upgrade != nil }
 
+    /// The four production plots and the resource each piles on its lot.
+    static let plotResource: [String: String] = ["Farm": "food", "Timber yard": "wood",
+                                                 "Quarry": "stone", "Mine": "iron"]
+
     /// Production per minute for a resource name, from its building level.
     func productionPerMinute(_ resource: String) -> Int {
         switch resource {
@@ -297,13 +301,45 @@ final class GameStore: ObservableObject {
         guard t >= last + 60_000 else { return false }
         var minutes = Int((t - last) / 60_000)
         if minutes > 240 { minutes = 240 }
-        for resource in ["food", "wood", "stone", "iron", "gold"] {
+        // The four plots pile their yield on the lot; only the Vault (gold)
+        // drips straight into the storehouse. Plot yield is safe from raids
+        // until the player collects it.
+        for (building, resource) in Self.plotResource {
             let gain = productionPerMinute(resource) * minutes
             guard gain > 0 else { continue }
-            game.resources.add(resource, gain)
+            if let i = game.buildings.firstIndex(where: { $0.name == building }) {
+                game.buildings[i].pending = (game.buildings[i].pending ?? 0) + gain
+            }
         }
+        let gold = productionPerMinute("gold") * minutes
+        if gold > 0 { game.resources.add("gold", gold) }
         defaults.set(minutes < 240 ? last + Double(minutes) * 60_000 : t, forKey: lastProductionKey)
-        return minutes > 0
+        return minutes > 0 || gold > 0
+    }
+
+    /// Collects the yield waiting on a plot into the storehouse. Returns the
+    /// amount moved (0 when the lot is empty).
+    @discardableResult
+    func collect(_ name: String) -> Int {
+        guard !game.victory else { return 0 }
+        guard let i = game.buildings.firstIndex(where: { $0.name == name }),
+              let pending = game.buildings[i].pending, pending > 0 else { return 0 }
+        let resource = Self.plotResource[name] ?? ""
+        guard !resource.isEmpty else { return 0 }
+        game.buildings[i].pending = nil
+        game.resources.add(resource, pending)
+        return pending
+    }
+
+    /// Collects every plot at once. Returns the total collected.
+    @discardableResult
+    func collectAll() -> Int {
+        guard !game.victory else { return 0 }
+        var total = 0
+        for name in Self.plotResource.keys {
+            total += collect(name)
+        }
+        return total
     }
 
     /// Completes finished training and healing records.

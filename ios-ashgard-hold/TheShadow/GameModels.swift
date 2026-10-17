@@ -101,10 +101,13 @@ struct TroopCounts: Codable, Equatable {
 
 // MARK: - Buildings
 
-/// One of the 14 buildings. JSON: {name, level}.
+/// One of the 14 buildings. JSON: {name, level} plus `pending` on the four
+/// production plots — the yield waiting on the lot until the player collects
+/// it. Old saves decode with pending nil.
 struct Building: Codable, Equatable, Identifiable {
     var name: String
     var level: Int
+    var pending: Int?
     var id: String { name }
 }
 
