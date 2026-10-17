@@ -601,7 +601,8 @@ struct BuildingUpgradeSheet: View {
         case "Timber yard": return ["Wood per minute: \(lvl * 20)"]
         case "Quarry": return ["Stone per minute: \(lvl * 20)"]
         case "Mine": return ["Iron per minute: \(lvl * 20)"]
-        case "Vault": return ["Gold per minute: \(lvl * 5)"]
+        case "Vault": return ["Gold per minute: \(lvl * 5)",
+                              "Protects \(store.comma(lvl * 500)) of each material from raids"]
         case "Barracks": return ["Trains Footmen"]
         case "Range": return ["Trains Archers"]
         case "Stable": return ["Trains Riders"]

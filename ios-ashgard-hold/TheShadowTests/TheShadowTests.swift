@@ -465,6 +465,8 @@ struct BloodWarTests {
         clock.t += 6 * 3_600_000 // six hours away
         store.tick()
         // Production is clamped to 4 h: 240 minutes of Farm 20 = 4800 + 1000.
-        #expect(store.game.resources.food == 5800)
+        // Then the 180 s raid hits (defense < 800) and plunders 10% above the
+        // Vault floor of 500: (5800 − 500) × 0.1 = 530.
+        #expect(store.game.resources.food == 5270)
     }
 }

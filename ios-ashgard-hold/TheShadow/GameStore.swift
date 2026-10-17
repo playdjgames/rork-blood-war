@@ -485,6 +485,21 @@ final class GameStore: ObservableObject {
                 if n > 0 { game.troops.subtract(type, n) }
             }
             applyWoundsFromIdle(hurt)
+            // Raiders take 10% of each material, but never below the
+            // Vault-protected floor (Vault level × 500).
+            let floor = level("Vault") * 500
+            var plundered: [String] = []
+            for resource in ["food", "wood", "stone", "iron"] {
+                let pile = game.resources.value(resource)
+                let loot = min(max(0, pile - floor), pile / 10)
+                if loot > 0 {
+                    game.resources.subtract(resource, loot)
+                    plundered.append("\(comma(loot)) \(resource)")
+                }
+            }
+            if !plundered.isEmpty {
+                addLog("Raiders plundered \(plundered.joined(separator: ", ")).")
+            }
             addLog("Hold 1 hit the Keep")
         } else {
             addLog("Held the wall")
