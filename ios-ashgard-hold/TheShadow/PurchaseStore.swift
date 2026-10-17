@@ -17,6 +17,8 @@ enum ShopProductID {
     static let supplyWagon = "bw_supply_wagon"
     static let supplyCart = "bw_supply_cart"
     static let supplyConvoy = "bw_supply_convoy"
+    static let supplyFleet = "bw_supply_fleet"
+    static let supplyArmada = "bw_supply_armada"
     static let speedUp1h = "bw_speedup_1h"
     static let instantFinish = "bw_instant_finish"
     static let fillGap = "bw_fill_gap"
