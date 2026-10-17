@@ -475,8 +475,8 @@ struct BloodWarTests {
         // Production is clamped to 4 h: 240 minutes of Farm 20 = 4800, piled
         // on the plot, safe from the raid. The raid (defense < 800) plunders
         // 10% of the storehouse above the Vault floor of 500:
-        // (1000 − 500) × 0.1 = 50.
-        #expect(store.game.buildings.first(where: { $0.name == "Farm" })?.pending == 4800)
+        // (1000 − 500) × 0.1 = 50. The plot cap is low: Farm 1 holds only 100.
+        #expect(store.game.buildings.first(where: { $0.name == "Farm" })?.pending == 100)
         #expect(store.game.resources.food == 950)
     }
 }

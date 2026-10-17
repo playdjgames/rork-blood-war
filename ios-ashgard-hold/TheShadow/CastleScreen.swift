@@ -628,8 +628,9 @@ struct BuildingUpgradeSheet: View {
     private func plotLines(_ resource: String, _ lvl: Int) -> [String] {
         let waiting = store.game.buildings.first(where: { $0.name == buildingName })?.pending ?? 0
         return ["\(resource.capitalized) per minute: \(lvl * 20)",
+                "Lot cap: \(store.comma(store.plotCap(lvl))) — it stops piling when full",
                 "Safe on the lot until collected — raids only take storehouse stock."]
-            + (waiting > 0 ? ["Waiting on the lot: \(store.comma(waiting))"] : [])
+            + (waiting > 0 ? ["Waiting on the lot: \(store.comma(waiting)) / \(store.comma(store.plotCap(lvl)))"] : [])
     }
 
     @ViewBuilder private var upgradeButton: some View {

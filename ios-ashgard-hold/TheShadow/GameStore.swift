@@ -206,6 +206,10 @@ final class GameStore: ObservableObject {
     static let plotResource: [String: String] = ["Farm": "food", "Timber yard": "wood",
                                                  "Quarry": "stone", "Mine": "iron"]
 
+    /// A lot holds at most level × 100 of its yield — five minutes of
+    /// production at level 1 — so lots must be collected regularly.
+    func plotCap(_ level: Int) -> Int { level * 100 }
+
     /// Production per minute for a resource name, from its building level.
     func productionPerMinute(_ resource: String) -> Int {
         switch resource {
@@ -308,7 +312,8 @@ final class GameStore: ObservableObject {
             let gain = productionPerMinute(resource) * minutes
             guard gain > 0 else { continue }
             if let i = game.buildings.firstIndex(where: { $0.name == building }) {
-                game.buildings[i].pending = (game.buildings[i].pending ?? 0) + gain
+                let cap = plotCap(game.buildings[i].level)
+                game.buildings[i].pending = min(cap, (game.buildings[i].pending ?? 0) + gain)
             }
         }
         let gold = productionPerMinute("gold") * minutes
