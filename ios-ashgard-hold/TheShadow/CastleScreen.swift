@@ -59,10 +59,38 @@ fileprivate enum HoldArt {
         HoldLot(building: "Rally yard", art: "medieval_rally_yard", anchor: CGPoint(x: 0.61, y: 0.67)),
     ]
 
-    /// Cleared, staked build plots waiting for future buildings.
+    /// The east land (`aerial_meadow_road`) is drawn at the same scale as the
+    /// hold render, starting this fraction of the render's width inside its
+    /// right edge and feathering in over it, so the two photos overlap.
+    static let eastOverlap: CGFloat = 0.086
+
+    /// Cleared, staked build plots waiting for future buildings. With the 9
+    /// standing meadow lots this makes 54 outside the wall — room for 6 of
+    /// each of the 9 outside building types. Every anchor is pixel-verified
+    /// open grass (scripts/plot_spots.py): no tree, moat, rock or road.
     static let openPlots: [CGPoint] = [
+        // Main meadow below the moat.
         CGPoint(x: 0.35, y: 0.755), CGPoint(x: 0.52, y: 0.755), CGPoint(x: 0.69, y: 0.755),
+        CGPoint(x: 0.170, y: 0.485), CGPoint(x: 0.685, y: 0.580), CGPoint(x: 0.845, y: 0.575),
+        CGPoint(x: 0.435, y: 0.685), CGPoint(x: 0.850, y: 0.750),
+        CGPoint(x: 0.590, y: 0.830), CGPoint(x: 0.775, y: 0.825),
+        // East land, revealed by panning.
         CGPoint(x: 1.10, y: 0.56), CGPoint(x: 1.14, y: 0.68),
+        CGPoint(x: 1.169, y: 0.185), CGPoint(x: 1.354, y: 0.190), CGPoint(x: 1.514, y: 0.180),
+        CGPoint(x: 1.664, y: 0.205),
+        CGPoint(x: 1.094, y: 0.275), CGPoint(x: 1.254, y: 0.255), CGPoint(x: 1.439, y: 0.260),
+        CGPoint(x: 1.589, y: 0.280), CGPoint(x: 1.774, y: 0.265),
+        CGPoint(x: 1.179, y: 0.345), CGPoint(x: 1.339, y: 0.325), CGPoint(x: 1.489, y: 0.345),
+        CGPoint(x: 1.699, y: 0.340),
+        CGPoint(x: 1.074, y: 0.440), CGPoint(x: 1.249, y: 0.435), CGPoint(x: 1.394, y: 0.470),
+        CGPoint(x: 1.599, y: 0.405), CGPoint(x: 1.774, y: 0.435),
+        CGPoint(x: 1.239, y: 0.520), CGPoint(x: 1.379, y: 0.555), CGPoint(x: 1.534, y: 0.505),
+        CGPoint(x: 1.689, y: 0.520),
+        CGPoint(x: 1.234, y: 0.605), CGPoint(x: 1.449, y: 0.630), CGPoint(x: 1.579, y: 0.585),
+        CGPoint(x: 1.749, y: 0.600),
+        CGPoint(x: 1.304, y: 0.680), CGPoint(x: 1.494, y: 0.710), CGPoint(x: 1.624, y: 0.665),
+        CGPoint(x: 1.774, y: 0.685),
+        CGPoint(x: 1.214, y: 0.755), CGPoint(x: 1.369, y: 0.760), CGPoint(x: 1.634, y: 0.750),
     ]
 
     /// 2.0.8 night clock: 0 = full day, 1 = deep night, once per 3 minutes.
@@ -119,8 +147,10 @@ private struct HoldWorld: View {
             let baseScale = max(size.width / HoldArt.imageW, size.height / HoldArt.imageH)
             let landW = HoldArt.imageW * baseScale * zoom
             let landH = HoldArt.imageH * baseScale * zoom
-            let stripW = size.width * 0.75
-            let feather: CGFloat = 40
+            // The east land matches the render's scale, so it lines up at
+            // every zoom; the overlap scales with it.
+            let stripW = landW
+            let feather = landW * HoldArt.eastOverlap
             let o = clamp(offset ?? CGSize(width: (size.width - landW) / 2 + 48, height: 0),
                           size: size, landW: landW, landH: landH, stripW: stripW - feather)
 
@@ -134,12 +164,11 @@ private struct HoldWorld: View {
                     .offset(x: o.width, y: o.height)
                     .allowsHitTesting(false)
 
-                // 2.0.8 open land east of the hold, feathered into the render.
-                Image("medieval_meadow_aerial")
+                // Open land east of the hold — the same aerial camera, sun,
+                // pines and grass as the render — feathered into its edge.
+                Image("aerial_meadow_road")
                     .resizable()
-                    .scaledToFill()
                     .frame(width: stripW, height: landH)
-                    .clipped()
                     .mask(
                         LinearGradient(stops: [
                             .init(color: .clear, location: 0),
