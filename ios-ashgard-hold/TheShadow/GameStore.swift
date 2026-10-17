@@ -542,6 +542,52 @@ final class GameStore: ObservableObject {
         return nil
     }
 
+    // MARK: - Purchased boosts
+
+    /// Credits a purchased supply bundle, every pile capped at storage.
+    func grantBundle(food: Int, wood: Int, stone: Int, iron: Int) {
+        for (resource, amount) in [("food", food), ("wood", wood),
+                                   ("stone", stone), ("iron", iron)] {
+            let room = game.storageCap - game.resources.value(resource)
+            guard room > 0 else { continue }
+            game.resources.add(resource, min(amount, room))
+        }
+        addLog("Supplies delivered to the storehouse.")
+        save()
+    }
+
+    /// Cuts one hour off the running upgrade. Returns a red error line or nil.
+    @discardableResult
+    func useSpeedUp() -> String? {
+        guard !game.victory else { return "Game over." }
+        guard var up = game.upgrade else { return "No upgrade running." }
+        up.finishAt = max(now(), up.finishAt - 3_600_000)
+        game.upgrade = up
+        addLog("Upgrade sped up by an hour.")
+        save()
+        return nil
+    }
+
+    /// Finishes the running upgrade immediately (paid power-up).
+    @discardableResult
+    func finishUpgradeNow() -> String? {
+        guard !game.victory else { return "Game over." }
+        guard let up = game.upgrade else { return "No upgrade running." }
+        if let i = game.buildings.firstIndex(where: { $0.name == up.buildingName }) {
+            game.buildings[i].level += 1
+        }
+        addLog("Upgraded \(up.buildingName)")
+        game.upgrade = nil
+        if up.buildingName == "Keep" {
+            game.keepLevel = level("Keep")
+        }
+        if up.buildingName == "Vault" {
+            game.storageCap = max(5000, level("Vault") * 1000)
+        }
+        save()
+        return nil
+    }
+
     // MARK: - Training & healing
 
     /// Max count the player can afford of a troop type right now.

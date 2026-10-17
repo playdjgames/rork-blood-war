@@ -550,6 +550,7 @@ private struct KeepSmoke: View {
 
 struct BuildingUpgradeSheet: View {
     @EnvironmentObject var store: GameStore
+    private let purchases = PurchaseStore.shared
     let buildingName: String
     @State private var error: String?
 
@@ -568,6 +569,7 @@ struct BuildingUpgradeSheet: View {
             if buildingName == "Keep" { KeepActions() }
             if let e = error { Text(e).redLine() }
             upgradeButton
+            shopSection
             Spacer(minLength: 0)
         }
         .padding(16)
@@ -601,12 +603,80 @@ struct BuildingUpgradeSheet: View {
     @ViewBuilder private var upgradeButton: some View {
         if let up = store.game.upgrade, up.buildingName == buildingName {
             UpgradeCountdown(finishAt: up.finishAt)
+            HStack(spacing: 8) {
+                SlateButtonSmall(title: "Speed up 1h — \(purchases.priceText(ShopProductID.speedUp1h, fallback: "$0.99"))") {
+                    buy(ShopProductID.speedUp1h) { store.useSpeedUp() }
+                }
+                SlateButtonSmall(title: "Finish now — \(purchases.priceText(ShopProductID.instantFinish, fallback: "$1.99"))") {
+                    buy(ShopProductID.instantFinish) { store.finishUpgradeNow() }
+                }
+            }
             SlateButton(title: "Busy", disabled: true) {}
         } else if store.game.upgrade != nil {
             SlateButton(title: "Busy", disabled: true) {}
         } else {
             SlateButton(title: "Upgrade") {
                 error = store.upgrade(buildingName)
+            }
+        }
+    }
+
+    /// Supply bundles, purchasable any time.
+    private var shopSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("SUPPLY SHOP")
+                .font(.system(size: 12, weight: .bold))
+                .foregroundColor(BW.subtext)
+            shopRow(title: "Supply Sack",
+                    detail: "1,000 food · 1,000 wood · 750 stone · 500 iron",
+                    productID: ShopProductID.supplySack, fallback: "$0.99") {
+                store.grantBundle(food: 1000, wood: 1000, stone: 750, iron: 500)
+                return nil
+            }
+            shopRow(title: "Supply Wagon",
+                    detail: "3,000 food · 3,000 wood · 2,250 stone · 1,500 iron",
+                    productID: ShopProductID.supplyWagon, fallback: "$2.99") {
+                store.grantBundle(food: 3000, wood: 3000, stone: 2250, iron: 1500)
+                return nil
+            }
+            Button {
+                Task { await purchases.restore() }
+            } label: {
+                Text("Restore Purchases")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundColor(BW.subtext)
+            }
+        }
+    }
+
+    private func shopRow(title: String, detail: String,
+                         productID: String, fallback: String,
+                         apply: @escaping () -> String?) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundColor(BW.text)
+                Text(detail)
+                    .font(.system(size: 12))
+                    .foregroundColor(BW.subtext)
+            }
+            Spacer(minLength: 8)
+            SlateButtonSmall(title: purchases.priceText(productID, fallback: fallback)) {
+                buy(productID, apply: apply)
+            }
+        }
+    }
+
+    /// Charges the product, then applies the boost. Cancellation is silent.
+    private func buy(_ productID: String, apply: @escaping () -> String?) {
+        Task {
+            let bought = await purchases.purchase(productID)
+            if bought {
+                error = apply()
+            } else if let purchaseError = purchases.error {
+                error = purchaseError
+                purchases.error = nil
             }
         }
     }

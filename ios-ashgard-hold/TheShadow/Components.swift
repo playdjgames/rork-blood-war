@@ -302,7 +302,7 @@ struct RenameSheet: View {
     private var buttonTitle: String {
         if purchases.isPurchasing { return "Purchasing…" }
         if isFree { return "Set name" }
-        let price = purchases.nameChangePackage?.storeProduct.localizedPriceString ?? "$0.99"
+        let price = purchases.priceText(ShopProductID.nameChange, fallback: "$0.99")
         return "Set name — \(price)"
     }
 
@@ -405,7 +405,7 @@ struct RenameSheet: View {
             }
         } else {
             Task {
-                let bought = await purchases.purchaseNameChange()
+                let bought = await purchases.purchase(ShopProductID.nameChange)
                 if bought {
                     if let failure = store.setName(trimmed) {
                         error = failure

@@ -2,21 +2,31 @@
 //  PurchaseStore.swift
 //  TheShadow
 //
-//  Blood War — RevenueCat purchases. The name change is $0.99 after the
-//  first free one; the product (bw_name_change) lives in the current offering.
+//  Blood War — RevenueCat purchases: the name change ($0.99 after the first
+//  free one) and the shop products (supply bundles, speed-ups, instant
+//  finish). All products live in the current offering.
 //
 
 import Observation
 import RevenueCat
 
-/// Shared purchase state: fetches the current offering and sells the
-/// name-change product. One instance for the whole app.
+/// Product identifiers sold in the shop.
+enum ShopProductID {
+    static let nameChange = "bw_name_change"
+    static let supplySack = "bw_supply_sack"
+    static let supplyWagon = "bw_supply_wagon"
+    static let speedUp1h = "bw_speedup_1h"
+    static let instantFinish = "bw_instant_finish"
+}
+
+/// Shared purchase state: fetches the current offering and sells every
+/// product in the shop. One instance for the whole app.
 @Observable
 @MainActor
 final class PurchaseStore {
     static let shared = PurchaseStore()
 
-    private(set) var nameChangePackage: Package?
+    private(set) var packages: [String: Package] = [:]
     private(set) var isPurchasing = false
     var error: String?
 
@@ -27,19 +37,26 @@ final class PurchaseStore {
     func fetchOfferings() async {
         do {
             let offerings = try await Purchases.shared.offerings()
-            let current = offerings.current
-            nameChangePackage =
-                current?.availablePackages.first { $0.storeProduct.productIdentifier == "bw_name_change" }
-                ?? current?.availablePackages.first
+            var map: [String: Package] = [:]
+            for package in offerings.current?.availablePackages ?? [] {
+                map[package.storeProduct.productIdentifier] = package
+            }
+            packages = map
         } catch {
             self.error = "Couldn't reach the store. Try again."
         }
     }
 
-    /// Buys the name-change product. True when the purchase completed;
+    /// The localized price shown on a shop button, or the fallback when the
+    /// offering hasn't loaded.
+    func priceText(_ productID: String, fallback: String) -> String {
+        packages[productID]?.storeProduct.localizedPriceString ?? fallback
+    }
+
+    /// Buys a product by identifier. True when the purchase completed;
     /// cancellation is not an error.
-    func purchaseNameChange() async -> Bool {
-        guard let package = nameChangePackage else {
+    func purchase(_ productID: String) async -> Bool {
+        guard let package = packages[productID] else {
             error = "Store not ready. Try again."
             return false
         }
