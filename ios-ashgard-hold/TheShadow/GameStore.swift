@@ -867,6 +867,15 @@ final class GameStore: ObservableObject {
         return nil
     }
 
+    private let freeRenameKey = "bw.freeRenameUsed"
+
+    /// The first rename is free; every later one is a $0.99 purchase.
+    var hasFreeRename: Bool { !defaults.bool(forKey: freeRenameKey) }
+
+    func markFreeRenameUsed() {
+        defaults.set(true, forKey: freeRenameKey)
+    }
+
     /// Alternates for a taken name — the name with digits or letters appended.
     func suggestNames(for raw: String) -> [String] {
         let base = raw.trimmingCharacters(in: .whitespacesAndNewlines)

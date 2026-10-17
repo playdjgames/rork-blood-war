@@ -10,5 +10,9 @@
 import Foundation
 
 enum Config {
-    nonisolated static let allValues: [String: String] = [:]
+    nonisolated static let EXPO_PUBLIC_REVENUECAT_TEST_API_KEY = ""
+
+    nonisolated static let allValues: [String: String] = [
+        "EXPO_PUBLIC_REVENUECAT_TEST_API_KEY": EXPO_PUBLIC_REVENUECAT_TEST_API_KEY,
+    ]
 }

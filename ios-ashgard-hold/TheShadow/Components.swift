@@ -6,6 +6,7 @@
 //  the metal-stamp resource icons, the 36pt resource bar and the 64pt tab bar.
 //
 
+import RevenueCat
 import SwiftUI
 
 // MARK: - Palette
@@ -290,10 +291,20 @@ extension Color {
 struct RenameSheet: View {
     @EnvironmentObject var store: GameStore
     @Environment(\.dismiss) private var dismiss
+    private let purchases = PurchaseStore.shared
     @State private var name = ""
     @State private var error: String?
     @State private var suggestions: [String] = []
     @FocusState private var focused: Bool
+
+    private var isFree: Bool { store.hasFreeRename }
+
+    private var buttonTitle: String {
+        if purchases.isPurchasing { return "Purchasing…" }
+        if isFree { return "Set name" }
+        let price = purchases.nameChangePackage?.storeProduct.localizedPriceString ?? "$0.99"
+        return "Set name — \(price)"
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -316,11 +327,6 @@ struct RenameSheet: View {
                 .onChange(of: name) { _, newName in
                     if newName.count > 18 { name = String(newName.prefix(18)) }
                 }
-            if let error {
-                Text(error)
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundColor(BW.red)
-            }
             if !suggestions.isEmpty {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Already used — take one of these:")
@@ -337,12 +343,26 @@ struct RenameSheet: View {
                     }
                 }
             }
-            SlateButton(title: "Set name") {
-                if let failure = store.setName(name) {
-                    error = failure
-                    if failure.contains("in use") { suggestions = store.suggestNames(for: name) }
-                } else {
-                    dismiss()
+            if let error {
+                Text(error)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundColor(purchases.error == nil ? BW.red : BW.subtext)
+            } else if !isFree, purchases.error == nil {
+                Text("First rename is free — later renames cost money.")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundColor(BW.subtext)
+            }
+            SlateButton(title: buttonTitle, disabled: purchases.isPurchasing) {
+                submit()
+            }
+            if !isFree {
+                Button {
+                    Task { await purchases.restore() }
+                } label: {
+                    Text("Restore Purchases")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundColor(BW.subtext)
+                        .frame(maxWidth: .infinity)
                 }
             }
             Spacer()
@@ -353,6 +373,49 @@ struct RenameSheet: View {
         .onAppear {
             name = store.game.playerName
             focused = true
+        }
+    }
+
+    /// Validates, then applies the rename — free the first time, a $0.99
+    /// purchase every time after.
+    private func submit() {
+        if purchases.isPurchasing { return }
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.count >= 2, trimmed.count <= 18 else {
+            error = "2 to 18 characters."
+            return
+        }
+        guard trimmed != store.game.playerName else {
+            dismiss()
+            return
+        }
+        guard store.isNameAvailable(trimmed) else {
+            error = "That name is already in use."
+            suggestions = store.suggestNames(for: name)
+            return
+        }
+        error = nil
+        suggestions = []
+        if isFree {
+            if let failure = store.setName(trimmed) {
+                error = failure
+            } else {
+                store.markFreeRenameUsed()
+                dismiss()
+            }
+        } else {
+            Task {
+                let bought = await purchases.purchaseNameChange()
+                if bought {
+                    if let failure = store.setName(trimmed) {
+                        error = failure
+                    } else {
+                        dismiss()
+                    }
+                } else if purchases.error == nil {
+                    // Cancelled — silently stay on the sheet.
+                }
+            }
         }
     }
 }
