@@ -64,32 +64,37 @@ fileprivate enum HoldArt {
     /// right edge and feathering in over it, so the two photos overlap.
     static let eastOverlap: CGFloat = 0.086
 
-    /// Cleared, staked build plots waiting for future buildings. With the 9
-    /// standing meadow lots this makes 54 outside the wall — room for 6 of
-    /// each of the 9 outside building types. Every anchor is pixel-verified
+    /// The art each plot building stands as — the same photoreal cutouts as
+    /// the starting lots. Only the six plot types may ever be built.
+    static let plotArt: [String: String] = [
+        "Farm": "medieval_farm_miniature",
+        "Timber yard": "medieval_lumber_mill",
+        "Quarry": "medieval_stone_quarry",
+        "Mine": "medieval_iron_mine_structure",
+        "Barracks": "medieval_barracks_miniature",
+        "Hospital": "medieval_infirmary_building",
+    ]
+
+    /// The 33 open build plots — with the 9 standing meadow lots, exactly 42
+    /// spaces outside the wall, unlocking with the Keep (12/18/24/30/36/42 of
+    /// the 42). Plots unlock in list order: the main meadow fills first, then
+    /// the east land as it pans into view. Every anchor is pixel-verified
     /// open grass (scripts/plot_spots.py): no tree, moat, rock or road.
     static let openPlots: [CGPoint] = [
         // Main meadow below the moat.
         CGPoint(x: 0.35, y: 0.755), CGPoint(x: 0.52, y: 0.755), CGPoint(x: 0.69, y: 0.755),
         CGPoint(x: 0.170, y: 0.485), CGPoint(x: 0.685, y: 0.580), CGPoint(x: 0.845, y: 0.575),
         CGPoint(x: 0.435, y: 0.685), CGPoint(x: 0.850, y: 0.750),
-        CGPoint(x: 0.590, y: 0.830), CGPoint(x: 0.775, y: 0.825),
+        CGPoint(x: 0.590, y: 0.830),
         // East land, revealed by panning.
         CGPoint(x: 1.10, y: 0.56), CGPoint(x: 1.14, y: 0.68),
-        CGPoint(x: 1.169, y: 0.185), CGPoint(x: 1.354, y: 0.190), CGPoint(x: 1.514, y: 0.180),
-        CGPoint(x: 1.664, y: 0.205),
-        CGPoint(x: 1.094, y: 0.275), CGPoint(x: 1.254, y: 0.255), CGPoint(x: 1.439, y: 0.260),
-        CGPoint(x: 1.589, y: 0.280), CGPoint(x: 1.774, y: 0.265),
+        CGPoint(x: 1.169, y: 0.185), CGPoint(x: 1.354, y: 0.190),
+        CGPoint(x: 1.094, y: 0.275), CGPoint(x: 1.254, y: 0.255),
         CGPoint(x: 1.179, y: 0.345), CGPoint(x: 1.339, y: 0.325), CGPoint(x: 1.489, y: 0.345),
-        CGPoint(x: 1.699, y: 0.340),
         CGPoint(x: 1.074, y: 0.440), CGPoint(x: 1.249, y: 0.435), CGPoint(x: 1.394, y: 0.470),
-        CGPoint(x: 1.599, y: 0.405), CGPoint(x: 1.774, y: 0.435),
         CGPoint(x: 1.239, y: 0.520), CGPoint(x: 1.379, y: 0.555), CGPoint(x: 1.534, y: 0.505),
-        CGPoint(x: 1.689, y: 0.520),
         CGPoint(x: 1.234, y: 0.605), CGPoint(x: 1.449, y: 0.630), CGPoint(x: 1.579, y: 0.585),
-        CGPoint(x: 1.749, y: 0.600),
         CGPoint(x: 1.304, y: 0.680), CGPoint(x: 1.494, y: 0.710), CGPoint(x: 1.624, y: 0.665),
-        CGPoint(x: 1.774, y: 0.685),
         CGPoint(x: 1.214, y: 0.755), CGPoint(x: 1.369, y: 0.760), CGPoint(x: 1.634, y: 0.750),
     ]
 
@@ -105,10 +110,18 @@ fileprivate enum HoldArt {
     }
 }
 
-/// Identifiable wrapper so the sheet can take a building name.
+/// Identifiable wrapper so a sheet can address one building — by name for
+/// the 14 original lots, by name + plot index for an outside plot instance.
 struct HoldBuildingRef: Identifiable {
     let name: String
-    var id: String { name }
+    var plot: Int? = nil
+    var id: String { plot.map { "\(name)#\($0)" } ?? name }
+}
+
+/// Identifiable wrapper for an open plot's build sheet.
+struct PlotRef: Identifiable {
+    let index: Int
+    var id: Int { index }
 }
 
 // MARK: - Home screen
@@ -116,15 +129,20 @@ struct HoldBuildingRef: Identifiable {
 struct CastleScreen: View {
     @EnvironmentObject var store: GameStore
     @State private var selected: HoldBuildingRef?
+    @State private var buildPlot: PlotRef?
 
     var body: some View {
-        HoldWorld(selected: selected?.name) { name in
-            selected = HoldBuildingRef(name: name)
-        }
+        HoldWorld(selected: selected,
+                  onPick: { selected = $0 },
+                  onPlotTap: { buildPlot = PlotRef(index: $0) })
         .bwScreen()
         .sheet(item: $selected) { ref in
-            BuildingUpgradeSheet(buildingName: ref.name)
+            BuildingUpgradeSheet(buildingName: ref.name, plot: ref.plot)
                 .presentationDetents([.height(380)])
+        }
+        .sheet(item: $buildPlot) { ref in
+            PlotBuildSheet(plot: ref.index)
+                .presentationDetents([.height(520)])
         }
     }
 }
@@ -133,8 +151,9 @@ struct CastleScreen: View {
 
 private struct HoldWorld: View {
     @EnvironmentObject var store: GameStore
-    let selected: String?
-    let onPick: (String) -> Void
+    let selected: HoldBuildingRef?
+    let onPick: (HoldBuildingRef) -> Void
+    let onPlotTap: (Int) -> Void
 
     @State private var zoom: CGFloat = 1
     @State private var offset: CGSize?
@@ -179,15 +198,32 @@ private struct HoldWorld: View {
                     .allowsHitTesting(false)
 
                 ForEach(HoldArt.openPlots.indices, id: \.self) { i in
-                    OpenPlot()
+                    // An open plot is either empty (tap to build one of the
+                    // six plot types) or carries its building cutout.
+                    if let b = store.game.buildings.first(where: { $0.plot == i }) {
+                        let up = store.game.upgrade
+                        LotTile(lot: HoldLot(building: b.name,
+                                             art: HoldArt.plotArt[b.name] ?? "",
+                                             anchor: HoldArt.openPlots[i]),
+                                level: b.level,
+                                isPicked: selected?.plot == i,
+                                upgradeFinishAt: up?.plot == i ? up?.finishAt : nil) {
+                            onPick(HoldBuildingRef(name: b.name, plot: i))
+                        }
                         .scaleEffect(zoom)
                         .position(x: o.width + HoldArt.openPlots[i].x * landW,
                                   y: o.height + HoldArt.openPlots[i].y * landH)
+                    } else {
+                        PlotSite(locked: i >= store.unlockedOpenPlots()) { onPlotTap(i) }
+                            .scaleEffect(zoom)
+                            .position(x: o.width + HoldArt.openPlots[i].x * landW,
+                                      y: o.height + HoldArt.openPlots[i].y * landH)
+                    }
                 }
 
                 // The KEEP is the painted castle itself — only an invisible
                 // tappable region is added over its art.
-                CastleKeepTap(level: store.level("Keep")) { onPick("Keep") }
+                CastleKeepTap(level: store.level("Keep")) { onPick(HoldBuildingRef(name: "Keep")) }
                     .frame(width: landW * 0.34, height: landH * 0.27)
                     .position(x: o.width + landW * 0.327, y: o.height + landH * 0.15)
 
@@ -197,16 +233,18 @@ private struct HoldWorld: View {
                               y: o.height + HoldArt.towerAnchor.y * landH)
 
                 KeepCutout(level: store.level("Academy"),
-                           isPicked: selected == "Academy",
+                           isPicked: selected?.name == "Academy" && selected?.plot == nil,
                            isUpgrading: store.game.upgrade?.buildingName == "Academy",
-                           night: night) { onPick("Academy") }
+                           night: night) { onPick(HoldBuildingRef(name: "Academy")) }
                     .scaleEffect(zoom)
                     .position(x: o.width + HoldArt.keepAnchor.x * landW,
                               y: o.height + HoldArt.keepAnchor.y * landH)
 
                 VaultCutout(level: store.level("Vault"),
-                            isPicked: selected == "Vault",
-                            isUpgrading: store.game.upgrade?.buildingName == "Vault") { onPick("Vault") }
+                            isPicked: selected?.name == "Vault" && selected?.plot == nil,
+                            isUpgrading: store.game.upgrade?.buildingName == "Vault") {
+                    onPick(HoldBuildingRef(name: "Vault"))
+                }
                     .scaleEffect(zoom)
                     .position(x: o.width + HoldArt.vaultAnchor.x * landW,
                               y: o.height + HoldArt.vaultAnchor.y * landH)
@@ -214,12 +252,15 @@ private struct HoldWorld: View {
                 ForEach(HoldArt.lots) { lot in
                     LotTile(lot: lot,
                             level: store.level(lot.building),
-                            isPicked: selected == lot.building,
+                            isPicked: selected?.name == lot.building && selected?.plot == nil,
                             upgradeFinishAt: store.game.upgrade?.buildingName == lot.building
-                                ? store.game.upgrade?.finishAt : nil) { onPick(lot.building) }
-                        .scaleEffect(zoom)
-                        .position(x: o.width + lot.anchor.x * landW,
-                                  y: o.height + lot.anchor.y * landH)
+                                && store.game.upgrade?.plot == nil
+                                ? store.game.upgrade?.finishAt : nil) {
+                        onPick(HoldBuildingRef(name: lot.building))
+                    }
+                    .scaleEffect(zoom)
+                    .position(x: o.width + lot.anchor.x * landW,
+                              y: o.height + lot.anchor.y * landH)
                 }
 
                 // Night ambience: the whole land dims gently while night lasts.
@@ -512,17 +553,27 @@ private struct RidgeDisc: View {
 }
 
 /// A cleared, staked build plot — ragged earth, survey stakes and string,
-/// foundation stones; its own irregular edge melts into the grass.
-private struct OpenPlot: View {
+/// foundation stones; its own irregular edge melts into the grass. Tap an
+/// open plot to choose what to build; locked plots sit dimmed until the
+/// Keep level unlocks them.
+private struct PlotSite: View {
+    let locked: Bool
+    let onTap: () -> Void
+
     private static let side: CGFloat = 50
 
     var body: some View {
-        Image("medieval_building_plot_aerial")
-            .resizable()
-            .scaledToFit()
-            .frame(width: Self.side, height: Self.side)
-            .allowsHitTesting(false)
-            .accessibilityHidden(true)
+        Button(action: onTap) {
+            Image("medieval_building_plot_aerial")
+                .resizable()
+                .scaledToFit()
+                .frame(width: Self.side, height: Self.side)
+                .opacity(locked ? 0.45 : 1)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(locked)
+        .accessibilityLabel(locked ? "Plot locked — raise the Keep" : "Empty plot, choose a building")
     }
 }
 
@@ -575,12 +626,76 @@ private struct KeepSmoke: View {
     }
 }
 
+// MARK: - Plot build sheet (the six plot types, capped)
+
+/// Choosing what to build on an open outside plot. Only the six plot
+/// building types are offered, each with its maximum count.
+struct PlotBuildSheet: View {
+    @EnvironmentObject var store: GameStore
+    @Environment(\.dismiss) private var dismiss
+    let plot: Int
+    @State private var error: String?
+
+    private var options: [(name: String, cap: Int)] {
+        GameStore.buildingOrder.compactMap { name in
+            guard let cap = GameStore.plotBuildings[name] else { return nil }
+            return (name, cap)
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Empty plot")
+                .font(.system(size: 19, weight: .bold))
+                .foregroundColor(BW.text)
+            Text("Plot \(plot + 1 + GameStore.standingLotCount) of \(GameStore.totalPlotSpaces) — " +
+                 "\(store.unlockedOpenPlots()) plots are open at Keep \(store.keepLevel).")
+                .font(.system(size: 13)).foregroundColor(BW.subtext)
+            ForEach(options, id: \.name) { opt in
+                buildRow(opt)
+            }
+            if let e = error { Text(e).redLine() }
+            Spacer(minLength: 0)
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(BW.background)
+    }
+
+    private func buildRow(_ opt: (name: String, cap: Int)) -> some View {
+        let built = store.count(opt.name)
+        let full = built >= opt.cap
+        return HStack(alignment: .top, spacing: 8) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(HoldArt.display(opt.name))
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundColor(BW.text)
+                Text("\(built) of \(opt.cap) built · \(costLine)")
+                    .font(.system(size: 12))
+                    .foregroundColor(BW.subtext)
+            }
+            Spacer(minLength: 8)
+            SlateButtonSmall(title: full ? "Full" : "Build", disabled: full || store.isBusy) {
+                let e = store.build(opt.name, onPlot: plot)
+                if e == nil { dismiss() } else { error = e }
+            }
+        }
+    }
+
+    private var costLine: String {
+        let c = store.upgradeCost(1)
+        return "\(store.comma(c.food)) food · \(store.comma(c.wood)) wood · " +
+               "\(store.comma(c.stone)) stone · \(store.comma(c.iron)) iron"
+    }
+}
+
 // MARK: - Upgrade sheet (unchanged rules and costs)
 
 struct BuildingUpgradeSheet: View {
     @EnvironmentObject var store: GameStore
     private let purchases = PurchaseStore.shared
     let buildingName: String
+    var plot: Int? = nil
     @State private var error: String?
 
     var body: some View {
@@ -588,7 +703,9 @@ struct BuildingUpgradeSheet: View {
             Text(HoldArt.display(buildingName))
                 .font(.system(size: 19, weight: .bold))
                 .foregroundColor(BW.text)
-            Text("Level \(store.level(buildingName))")
+            Text(store.level(buildingName, plot: plot) == 0 && plot != nil
+                 ? "Rising…"
+                 : "Level \(store.level(buildingName, plot: plot))")
                 .font(.system(size: 14)).foregroundColor(BW.subtext)
             ForEach(lines, id: \.self) { line in
                 Text(line)
@@ -596,27 +713,27 @@ struct BuildingUpgradeSheet: View {
                     .foregroundColor(BW.subtext)
             }
             if buildingName == "Keep" { KeepActions() }
-            if isPlot, let pending = store.game.buildings.first(where: { $0.name == buildingName })?.pending,
+            if isPlot, let pending = store.building(buildingName, plot: plot)?.pending,
                pending > 0 {
                 SlateButton(title: "Collect \(store.comma(pending))") {
-                    _ = store.collect(buildingName)
+                    _ = store.collect(buildingName, plot: plot)
                 }
             }
             if let e = error { Text(e).redLine() }
             if store.game.upgrade == nil,
-               let missing = store.upgradeShortfall(buildingName) {
+               let missing = store.upgradeShortfall(buildingName, plot: plot) {
                 // Price off the bundles: the shortfall as a fraction of a
                 // Supply Sack decides the tier; the detail line shows the
                 // bundle value of what's missing.
-                let fraction = store.upgradeShortfallFraction(buildingName) ?? 0
+                let fraction = store.upgradeShortfallFraction(buildingName, plot: plot) ?? 0
                 let big = fraction > 0.4
                 let estimate = String(format: "bundle value ≈ $%.2f", fraction * 0.99)
                 shopRow(title: big ? "Missing materials (large)" : "Missing materials",
                         detail: "\(missingLine(missing)) — \(estimate)",
                         productID: big ? ShopProductID.fillGapBig : ShopProductID.fillGap,
                         fallback: big ? "$1.99" : "$0.99") {
-                    if let e = store.grantUpgradeGap(buildingName) { return e }
-                    return store.upgrade(buildingName)
+                    if let e = store.grantUpgradeGap(buildingName, plot: plot) { return e }
+                    return store.upgrade(buildingName, plot: plot)
                 }
             }
             upgradeButton
@@ -630,7 +747,7 @@ struct BuildingUpgradeSheet: View {
 
     /// The exact production/role lines from the master spec.
     private var lines: [String] {
-        let lvl = store.level(buildingName)
+        let lvl = store.level(buildingName, plot: plot)
         switch buildingName {
         case "Farm": return plotLines("food", lvl)
         case "Timber yard": return plotLines("wood", lvl)
@@ -655,7 +772,7 @@ struct BuildingUpgradeSheet: View {
     private var isPlot: Bool { GameStore.plotResource[buildingName] != nil }
 
     private func plotLines(_ resource: String, _ lvl: Int) -> [String] {
-        let waiting = store.game.buildings.first(where: { $0.name == buildingName })?.pending ?? 0
+        let waiting = store.building(buildingName, plot: plot)?.pending ?? 0
         return ["\(resource.capitalized) per minute: \(lvl * 20)",
                 "Lot cap: \(store.comma(store.plotCap(lvl))) — it stops piling when full",
                 "Safe on the lot until collected — raids only take storehouse stock."]
@@ -663,7 +780,7 @@ struct BuildingUpgradeSheet: View {
     }
 
     @ViewBuilder private var upgradeButton: some View {
-        if let up = store.game.upgrade, up.buildingName == buildingName {
+        if let up = store.game.upgrade, up.buildingName == buildingName, up.plot == plot {
             UpgradeCountdown(finishAt: up.finishAt)
             HStack(spacing: 8) {
                 SlateButtonSmall(title: "Speed up 1h — \(purchases.priceText(ShopProductID.speedUp1h, fallback: "$0.99"))") {
@@ -678,7 +795,7 @@ struct BuildingUpgradeSheet: View {
             SlateButton(title: "Busy", disabled: true) {}
         } else {
             SlateButton(title: "Upgrade") {
-                error = store.upgrade(buildingName)
+                error = store.upgrade(buildingName, plot: plot)
             }
         }
     }

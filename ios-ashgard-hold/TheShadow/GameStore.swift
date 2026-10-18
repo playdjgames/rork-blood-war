@@ -170,17 +170,25 @@ final class GameStore: ObservableObject {
 
     // MARK: - Derived values
 
+    func building(_ name: String, plot: Int?) -> Building? {
+        game.buildings.first { $0.name == name && $0.plot == plot }
+    }
+
     func building(_ name: String) -> Building? {
-        game.buildings.first { $0.name == name }
+        building(name, plot: nil)
+    }
+
+    func level(_ name: String, plot: Int?) -> Int {
+        building(name, plot: plot)?.level ?? 0
     }
 
     func level(_ name: String) -> Int {
-        building(name)?.level ?? 0
+        level(name, plot: nil)
     }
 
     var keepLevel: Int { game.keepLevel }
 
-    var beds: Int { level("Hospital") * 100 + (game.research.hospital ? 100 : 0) }
+    var beds: Int { totalLevel("Hospital") * 100 + (game.research.hospital ? 100 : 0) }
 
     var woundedTotal: Int { game.wounded.total }
 
@@ -206,17 +214,59 @@ final class GameStore: ObservableObject {
     static let plotResource: [String: String] = ["Farm": "food", "Timber yard": "wood",
                                                  "Quarry": "stone", "Mine": "iron"]
 
+    /// The only buildings that may stand on an outside plot, with their
+    /// maximum counts (the starting lot counts toward the cap): ten each of
+    /// Farm, Mill, Stone Mine and Iron Mine; eight each of Training Grounds
+    /// and Medic Tent. No other building type is ever offered a plot.
+    static let plotBuildings: [String: Int] = ["Farm": 10, "Timber yard": 10,
+                                               "Quarry": 10, "Mine": 10,
+                                               "Barracks": 8, "Hospital": 8]
+
+    /// Outside the wall there are exactly 42 plot spaces: the 9 starting
+    /// lots plus 33 open plots.
+    static let totalPlotSpaces = 42
+
+    /// Of those, the 9 starting lots are always standing.
+    static let standingLotCount = 9
+
+    /// Open plots unlocked at the current Keep level. The Keep gates the
+    /// whole 42-space schedule — the 9 starting lots included — so the open
+    /// plots are 42-step minus the 9 standing: Keep 1–2 → 3 open, 3–4 → 9,
+    /// 5–9 → 15, 10–11 → 21, 12–14 → 27, 15+ → all 33.
+    func unlockedOpenPlots() -> Int {
+        switch game.keepLevel {
+        case ..<3: return 3
+        case ..<5: return 9
+        case ..<10: return 15
+        case ..<12: return 21
+        case ..<15: return 27
+        default: return 33
+        }
+    }
+
     /// A lot holds at most level × 100 of its yield — five minutes of
     /// production at level 1 — so lots must be collected regularly.
     func plotCap(_ level: Int) -> Int { level * 100 }
 
-    /// Production per minute for a resource name, from its building level.
+    /// How many of a building stand right now (all instances).
+    func count(_ name: String) -> Int {
+        game.buildings.filter { $0.name == name }.count
+    }
+
+    /// Summed levels of every instance — a repeat building adds its whole
+    /// level to the type's output.
+    func totalLevel(_ name: String) -> Int {
+        game.buildings.filter { $0.name == name }.reduce(0) { $0 + $1.level }
+    }
+
+    /// Production per minute for a resource name, from every instance of
+    /// its building (a second Farm adds its level to food).
     func productionPerMinute(_ resource: String) -> Int {
         switch resource {
-        case "food": return level("Farm") * 20
-        case "wood": return level("Timber yard") * 20
-        case "stone": return level("Quarry") * 20
-        case "iron": return level("Mine") * 20
+        case "food": return totalLevel("Farm") * 20
+        case "wood": return totalLevel("Timber yard") * 20
+        case "stone": return totalLevel("Quarry") * 20
+        case "iron": return totalLevel("Mine") * 20
         case "gold": return level("Vault") * 5
         default: return 0
         }
@@ -305,15 +355,15 @@ final class GameStore: ObservableObject {
         guard t >= last + 60_000 else { return false }
         var minutes = Int((t - last) / 60_000)
         if minutes > 240 { minutes = 240 }
-        // The four plots pile their yield on the lot; only the Vault (gold)
-        // drips straight into the storehouse. Plot yield is safe from raids
-        // until the player collects it.
-        for (building, resource) in Self.plotResource {
-            let gain = productionPerMinute(resource) * minutes
-            guard gain > 0 else { continue }
-            if let i = game.buildings.firstIndex(where: { $0.name == building }) {
-                let cap = plotCap(game.buildings[i].level)
-                game.buildings[i].pending = min(cap, (game.buildings[i].pending ?? 0) + gain)
+        // The four plot types pile their yield on each of their lots; only
+        // the Vault (gold) drips straight into the storehouse. Plot yield is
+        // safe from raids until the player collects it.
+        for building in Self.plotResource.keys {
+            for i in game.buildings.indices where game.buildings[i].name == building {
+                let lvl = game.buildings[i].level
+                guard lvl > 0 else { continue }
+                let cap = plotCap(lvl)
+                game.buildings[i].pending = min(cap, (game.buildings[i].pending ?? 0) + lvl * 20 * minutes)
             }
         }
         let gold = productionPerMinute("gold") * minutes
@@ -322,12 +372,12 @@ final class GameStore: ObservableObject {
         return minutes > 0 || gold > 0
     }
 
-    /// Collects the yield waiting on a plot into the storehouse. Returns the
-    /// amount moved (0 when the lot is empty).
+    /// Collects the yield waiting on one plot instance into the storehouse.
+    /// Returns the amount moved (0 when the lot is empty).
     @discardableResult
-    func collect(_ name: String) -> Int {
+    func collect(_ name: String, plot: Int? = nil) -> Int {
         guard !game.victory else { return 0 }
-        guard let i = game.buildings.firstIndex(where: { $0.name == name }),
+        guard let i = game.buildings.firstIndex(where: { $0.name == name && $0.plot == plot }),
               let pending = game.buildings[i].pending, pending > 0 else { return 0 }
         let resource = Self.plotResource[name] ?? ""
         guard !resource.isEmpty else { return 0 }
@@ -336,13 +386,13 @@ final class GameStore: ObservableObject {
         return pending
     }
 
-    /// Collects every plot at once. Returns the total collected.
+    /// Collects every plot lot at once. Returns the total collected.
     @discardableResult
     func collectAll() -> Int {
         guard !game.victory else { return 0 }
         var total = 0
-        for name in Self.plotResource.keys {
-            total += collect(name)
+        for i in game.buildings.indices where game.buildings[i].pending != nil {
+            total += collect(game.buildings[i].name, plot: game.buildings[i].plot)
         }
         return total
     }
@@ -368,10 +418,14 @@ final class GameStore: ObservableObject {
     /// Completes the running upgrade.
     private func resolveUpgrade(_ t: Double) -> Bool {
         guard let up = game.upgrade, t >= up.finishAt else { return false }
-        if let i = game.buildings.firstIndex(where: { $0.name == up.buildingName }) {
+        if let i = game.buildings.firstIndex(where: { $0.name == up.buildingName && $0.plot == up.plot }) {
             game.buildings[i].level += 1
+            if game.buildings[i].level == 1, up.plot != nil {
+                addLog("Built \(up.buildingName)")
+            } else {
+                addLog("Upgraded \(up.buildingName)")
+            }
         }
-        addLog("Upgraded \(up.buildingName)")
         game.upgrade = nil
         if up.buildingName == "Keep" {
             game.keepLevel = level("Keep")
@@ -566,12 +620,13 @@ final class GameStore: ObservableObject {
     // MARK: - Upgrade
 
     /// Tries to start an upgrade. Returns the red error line, or nil on success.
+    /// Pass `plot` for an outside plot instance.
     @discardableResult
-    func upgrade(_ name: String) -> String? {
+    func upgrade(_ name: String, plot: Int? = nil) -> String? {
         guard !game.victory else { return "Game over." }
         let t = now()
         guard game.upgrade == nil else { return "Busy" }
-        guard let b = building(name) else { return nil }
+        guard let b = building(name, plot: plot) else { return nil }
         if name == "Keep" {
             if b.level >= 5 { return "Raise the Keep first." }
         } else if b.level >= game.keepLevel {
@@ -587,7 +642,44 @@ final class GameStore: ObservableObject {
         game.resources.wood -= cost.wood
         game.resources.stone -= cost.stone
         game.resources.iron -= cost.iron
-        game.upgrade = UpgradeState(buildingName: name, finishAt: t + Double(b.level) * 30_000)
+        game.upgrade = UpgradeState(buildingName: name, finishAt: t + Double(b.level) * 30_000,
+                                    plot: plot)
+        save()
+        return nil
+    }
+
+    // MARK: - Building on outside plots
+
+    /// Builds a new instance of one of the six plot building types on an
+    /// open, unlocked plot. Costs a level-1 build (200/200/150/100) and
+    /// takes 30 s. Returns a red error line, or nil on success.
+    @discardableResult
+    func build(_ name: String, onPlot plot: Int) -> String? {
+        guard !game.victory else { return "Game over." }
+        guard Self.plotBuildings[name] != nil else {
+            return "Only farms, mills, mines, training grounds and medic tents stand on plots."
+        }
+        guard plot >= 0, plot < Self.totalPlotSpaces - Self.standingLotCount else { return nil }
+        guard game.upgrade == nil else { return "Busy" }
+        guard !game.buildings.contains(where: { $0.plot == plot }) else {
+            return "That plot is taken."
+        }
+        guard plot < unlockedOpenPlots() else { return "Raise the Keep to unlock this plot." }
+        let cap = Self.plotBuildings[name] ?? 0
+        guard count(name) < cap else { return "\(name) limit: \(cap)." }
+        let cost = upgradeCost(1)
+        for resource in ["food", "wood", "stone", "iron"] {
+            if game.resources.value(resource) < cost.value(resource) {
+                return "Need \(comma(cost.value(resource) - game.resources.value(resource))) more \(resource)."
+            }
+        }
+        game.resources.food -= cost.food
+        game.resources.wood -= cost.wood
+        game.resources.stone -= cost.stone
+        game.resources.iron -= cost.iron
+        game.buildings.append(Building(name: name, level: 0, pending: nil, plot: plot))
+        game.upgrade = UpgradeState(buildingName: name, finishAt: now() + 30_000, plot: plot)
+        addLog("Breaking ground on a \(name).")
         save()
         return nil
     }
@@ -621,10 +713,14 @@ final class GameStore: ObservableObject {
     func finishUpgradeNow() -> String? {
         guard !game.victory else { return "Game over." }
         guard let up = game.upgrade else { return "No upgrade running." }
-        if let i = game.buildings.firstIndex(where: { $0.name == up.buildingName }) {
+        if let i = game.buildings.firstIndex(where: { $0.name == up.buildingName && $0.plot == up.plot }) {
             game.buildings[i].level += 1
+            if game.buildings[i].level == 1, up.plot != nil {
+                addLog("Built \(up.buildingName)")
+            } else {
+                addLog("Upgraded \(up.buildingName)")
+            }
         }
-        addLog("Upgraded \(up.buildingName)")
         game.upgrade = nil
         if up.buildingName == "Keep" {
             game.keepLevel = level("Keep")
@@ -634,9 +730,10 @@ final class GameStore: ObservableObject {
     }
 
     /// Exactly what the player is short of for the next upgrade of a
-    /// building, or nil when they can already afford it.
-    func upgradeShortfall(_ name: String) -> Resources? {
-        guard let b = building(name) else { return nil }
+    /// building (a plot instance with `plot`), or nil when they can already
+    /// afford it.
+    func upgradeShortfall(_ name: String, plot: Int? = nil) -> Resources? {
+        guard let b = building(name, plot: plot) else { return nil }
         let cost = upgradeCost(b.level)
         var missing = Resources.zero
         var any = false
@@ -652,8 +749,8 @@ final class GameStore: ObservableObject {
 
     /// The shortfall as a fraction of one Supply Sack's contents
     /// (1000 food, 1000 wood, 750 stone, 500 iron). Drives the fill price.
-    func upgradeShortfallFraction(_ name: String) -> Double? {
-        guard let missing = upgradeShortfall(name) else { return nil }
+    func upgradeShortfallFraction(_ name: String, plot: Int? = nil) -> Double? {
+        guard let missing = upgradeShortfall(name, plot: plot) else { return nil }
         let foodFraction = Double(missing.food) / 1000.0
         let woodFraction = Double(missing.wood) / 1000.0
         let stoneFraction = Double(missing.stone) / 750.0
@@ -663,9 +760,9 @@ final class GameStore: ObservableObject {
 
     /// Credits exactly the missing materials for the next upgrade (paid fill).
     @discardableResult
-    func grantUpgradeGap(_ name: String) -> String? {
+    func grantUpgradeGap(_ name: String, plot: Int? = nil) -> String? {
         guard !game.victory else { return "Game over." }
-        guard let missing = upgradeShortfall(name) else { return "Nothing missing." }
+        guard let missing = upgradeShortfall(name, plot: plot) else { return "Nothing missing." }
         for resource in ["food", "wood", "stone", "iron"] where missing.value(resource) > 0 {
             game.resources.add(resource, missing.value(resource))
         }

@@ -104,11 +104,17 @@ struct TroopCounts: Codable, Equatable {
 /// One of the 14 buildings. JSON: {name, level} plus `pending` on the four
 /// production plots — the yield waiting on the lot until the player collects
 /// it. Old saves decode with pending nil.
+///
+/// `plot` marks an instance built on an outside plot (the index of the open
+/// plot it stands on); nil is one of the 14 original singletons. Repeat
+/// buildings are only allowed for the six plot types (farm, mill, stone and
+/// iron mine, training grounds, medic tent), each with its own cap.
 struct Building: Codable, Equatable, Identifiable {
     var name: String
     var level: Int
     var pending: Int?
-    var id: String { name }
+    var plot: Int?
+    var id: String { plot.map { "\(name)#\($0)" } ?? name }
 }
 
 // MARK: - Training
@@ -126,10 +132,12 @@ struct TrainingRecord: Codable, Equatable {
     var kind: TrainingKind = .train
 }
 
-/// The one running upgrade, stored as {buildingName, finishAt}.
+/// The one running upgrade, stored as {buildingName, finishAt}. `plot` is
+/// the outside plot index when the job is a new plot building going up.
 struct UpgradeState: Codable, Equatable {
     var buildingName: String
     var finishAt: Double
+    var plot: Int?
 }
 
 // MARK: - Marches

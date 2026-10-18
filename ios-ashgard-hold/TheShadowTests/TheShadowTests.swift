@@ -428,14 +428,20 @@ struct BloodWarTests {
 
     @Test func joinByDeviceCode() {
         let clock = Clock(1_000_000_000_000)
-        let (store, _, _) = makeStore(clock)
+        // Two holds sharing this device's defaults share the code registry.
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("bw-test-\(UUID().uuidString).json")
+        let defaults = UserDefaults(suiteName: "bw-tests-\(UUID().uuidString)")!
+        let store = GameStore(saveURL: url, defaults: defaults, startsTimer: false) { clock.t }
+        let twin = GameStore(saveURL: url.appendingPathExtension("twin"),
+                             defaults: defaults, startsTimer: false) { clock.t }
         #expect(store.createAlliance(name: "AshLegion") == nil)
         let code = store.game.alliance?.code ?? ""
-        store.disbandAlliance()
-        #expect(store.game.alliance == nil)
-        #expect(store.joinAlliance(code: "ZZZZZ") == "No code match.")
-        #expect(store.joinAlliance(code: code) == nil)
-        #expect(store.game.alliance?.members.contains("Lord") == true)
+        #expect(code.count == 5)
+        store.post("First message")
+        #expect(twin.joinAlliance(code: "ZZZZZ") == "No code match.")
+        #expect(twin.joinAlliance(code: code) == nil)
+        #expect(twin.game.alliance?.members.contains("Lord") == true)
     }
 
     @Test func logKeepsThirtyLines() {
@@ -474,9 +480,118 @@ struct BloodWarTests {
         store.tick()
         // Production is clamped to 4 h: 240 minutes of Farm 20 = 4800, piled
         // on the plot, safe from the raid. The raid (defense < 800) plunders
-        // 10% of the storehouse above the Vault floor of 500:
-        // (1000 − 500) × 0.1 = 50. The plot cap is low: Farm 1 holds only 100.
+        // 10% of each storehouse material but never below the Vault floor of
+        // 500: food 1000 → −100. The plot cap is low: Farm 1 holds only 100.
         #expect(store.game.buildings.first(where: { $0.name == "Farm" })?.pending == 100)
-        #expect(store.game.resources.food == 950)
+        #expect(store.game.resources.food == 900)
+    }
+
+    // MARK: Outside plots (42 spaces, six types, caps)
+
+    @Test func plotUnlockSchedule() {
+        let (store, _, _) = makeStore(Clock(1_000_000_000_000))
+        for (keep, open) in [(1, 3), (2, 3), (3, 9), (4, 9), (5, 15), (9, 15),
+                             (10, 21), (11, 21), (12, 27), (14, 27), (15, 33), (20, 33)] {
+            store.inject { g in g.keepLevel = keep }
+            #expect(store.unlockedOpenPlots() == open)
+        }
+    }
+
+    @Test func buildOnPlotCostsAndTakesThirtySeconds() {
+        let clock = Clock(1_000_000_000_000)
+        let (store, _, _) = makeStore(clock)
+        #expect(store.build("Farm", onPlot: 0) == nil)
+        #expect(store.game.resources.food == 800) // 1000 − 200
+        #expect(store.game.resources.iron == 400) // 500 − 100
+        #expect(store.building("Farm", plot: 0)?.level == 0)
+        #expect(store.game.upgrade?.plot == 0)
+        clock.t += 30_000
+        store.tick()
+        #expect(store.level("Farm", plot: 0) == 1)
+        #expect(store.count("Farm") == 2) // the starting lot plus this one
+        #expect(store.game.log.first?.contains("Built Farm") == true)
+    }
+
+    @Test func plotsTakeOnlySixTypes() {
+        let (store, _, _) = makeStore(Clock(1_000_000_000_000))
+        #expect(store.build("Range", onPlot: 0)?.contains("plots") == true)
+        #expect(store.build("Stable", onPlot: 0)?.contains("plots") == true)
+        #expect(store.build("Rally yard", onPlot: 0)?.contains("plots") == true)
+        #expect(store.game.buildings.count == 14) // nothing was added
+    }
+
+    @Test func plotCapsCountTheStartingLot() {
+        let clock = Clock(1_000_000_000_000)
+        let (store, _, _) = makeStore(clock)
+        store.inject { g in
+            g.keepLevel = 15
+            g.resources = Resources(food: 100_000, wood: 100_000, stone: 100_000,
+                                    iron: 100_000, gold: 0)
+        }
+        // Farm cap 10 includes the starting farm: nine more fit, then no more.
+        for plot in 0..<9 {
+            #expect(store.build("Farm", onPlot: plot) == nil)
+            clock.t += 30_000
+            store.tick()
+        }
+        #expect(store.count("Farm") == 10)
+        #expect(store.build("Farm", onPlot: 9) == "Farm limit: 10.")
+        // Barracks cap 8 includes its starting lot: seven more fit.
+        #expect(store.build("Barracks", onPlot: 9) == nil)
+        clock.t += 30_000
+        store.tick()
+        for plot in 10..<16 {
+            #expect(store.build("Barracks", onPlot: plot) == nil)
+            clock.t += 30_000
+            store.tick()
+        }
+        #expect(store.count("Barracks") == 8)
+        #expect(store.build("Barracks", onPlot: 16) == "Barracks limit: 8.")
+    }
+
+    @Test func plotLockedBusyAndTaken() {
+        let clock = Clock(1_000_000_000_000)
+        let (store, _, _) = makeStore(clock)
+        // Keep 1 unlocks 3 open plots: 0, 1 and 2.
+        #expect(store.build("Farm", onPlot: 3) == "Raise the Keep to unlock this plot.")
+        #expect(store.build("Farm", onPlot: 0) == nil)
+        #expect(store.build("Farm", onPlot: 1) == "Busy")
+        clock.t += 30_000
+        store.tick()
+        #expect(store.build("Quarry", onPlot: 0) == "That plot is taken.")
+    }
+
+    @Test func plotInstanceProducesAndCollects() {
+        let clock = Clock(1_000_000_000_000)
+        let (store, _, _) = makeStore(clock)
+        #expect(store.build("Farm", onPlot: 0) == nil)
+        clock.t += 30_000
+        store.tick()
+        clock.t += 60_000
+        store.tick()
+        // Both farms pile 20 on their own lots.
+        #expect(store.building("Farm", plot: 0)?.pending == 20)
+        #expect(store.building("Farm")?.pending == 20)
+        #expect(store.collect("Farm", plot: 0) == 20)
+        #expect(store.game.resources.food == 820) // 800 after the build, + 20
+        // Collect-all sweeps every lot: the other farm plus timber, stone
+        // and iron, 20 each — of which 20 food reaches the storehouse.
+        #expect(store.collectAll() == 80)
+        #expect(store.game.resources.food == 840)
+    }
+
+    @Test func secondHospitalAddsBeds() {
+        let clock = Clock(1_000_000_000_000)
+        let (store, _, _) = makeStore(clock)
+        #expect(store.beds == 100) // the starting Hospital, level 1
+        #expect(store.build("Hospital", onPlot: 0) == nil)
+        clock.t += 30_000
+        store.tick()
+        store.inject { g in
+            if let i = g.buildings.firstIndex(where: { $0.plot == 0 }) {
+                g.buildings[i].level = 2
+            }
+        }
+        #expect(store.beds == 300) // 100 + 200
     }
 }
