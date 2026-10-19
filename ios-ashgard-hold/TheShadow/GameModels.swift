@@ -308,6 +308,23 @@ struct SaveRecord: Codable, Equatable {
     var log: [String]
     var victory: Bool
     var victoryWinner: String?
+
+    // Daily reward + daily quests.
+    /// When the daily reward was last claimed (ms since 1970; 0 = never).
+    var lastDailyClaimAt: Double = 0
+    /// Consecutive daily claims, 1–7 (0 before the first claim).
+    var dailyStreak: Int = 0
+    /// Quest ids claimed since the last quest reset.
+    var dailyQuestsClaimed: [String: Bool] = [:]
+    /// Food brought into the storehouse since the last quest reset.
+    var questFoodGathered: Int = 0
+    /// Troops finished training since the last quest reset.
+    var questTroopsTrained: Int = 0
+    /// Holds attacked successfully since the last quest reset.
+    var questHoldsAttacked: Int = 0
+    /// When the quests last reset (ms since 1970; 0 = never). Stops the
+    /// reset from wiping progress on every tick while its window is open.
+    var questsResetAt: Double = 0
 }
 
 /// Saves written before victory existed load with victory false.
@@ -334,5 +351,12 @@ extension SaveRecord {
         log = try c.decode([String].self, forKey: .log)
         victory = try c.decodeIfPresent(Bool.self, forKey: .victory) ?? false
         victoryWinner = try c.decodeIfPresent(String.self, forKey: .victoryWinner)
+        lastDailyClaimAt = try c.decodeIfPresent(Double.self, forKey: .lastDailyClaimAt) ?? 0
+        dailyStreak = try c.decodeIfPresent(Int.self, forKey: .dailyStreak) ?? 0
+        dailyQuestsClaimed = try c.decodeIfPresent([String: Bool].self, forKey: .dailyQuestsClaimed) ?? [:]
+        questFoodGathered = try c.decodeIfPresent(Int.self, forKey: .questFoodGathered) ?? 0
+        questTroopsTrained = try c.decodeIfPresent(Int.self, forKey: .questTroopsTrained) ?? 0
+        questHoldsAttacked = try c.decodeIfPresent(Int.self, forKey: .questHoldsAttacked) ?? 0
+        questsResetAt = try c.decodeIfPresent(Double.self, forKey: .questsResetAt) ?? 0
     }
 }

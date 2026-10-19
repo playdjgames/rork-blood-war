@@ -24,6 +24,7 @@ struct ContentView: View {
             case .heal: HealScreen()
             case .research: ResearchScreen()
             case .alliance: AllianceScreen()
+            case .daily: DailyScreen()
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -32,7 +33,8 @@ struct ContentView: View {
             ResourceBar()
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            BWTabBar(tab: $tab, glowTab: tutorial.glowTab)
+            BWTabBar(tab: $tab, glowTab: tutorial.glowTab,
+                     badgeTab: store.canClaimDaily() ? .daily : nil)
         }
         .overlay {
             if store.game.victory {

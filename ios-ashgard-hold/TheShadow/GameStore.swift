@@ -341,6 +341,7 @@ final class GameStore: ObservableObject {
         changed = resolveUpgrade(t) || changed
         changed = resolveMarches(t) || changed
         changed = runIncomingCheck(t) || changed
+        changed = resetDailyQuestsIfNeeded() || changed
         if changed { save() }
     }
 
@@ -383,6 +384,7 @@ final class GameStore: ObservableObject {
         guard !resource.isEmpty else { return 0 }
         game.buildings[i].pending = nil
         game.resources.add(resource, pending)
+        if resource == "food" { game.questFoodGathered += pending }
         return pending
     }
 
@@ -405,6 +407,7 @@ final class GameStore: ObservableObject {
             switch first.kind {
             case .train:
                 game.troops.add(first.type, first.count)
+                game.questTroopsTrained += first.count
             case .heal:
                 let moved = min(first.count, game.wounded.value(first.type))
                 game.wounded.subtract(first.type, moved)
@@ -496,6 +499,7 @@ final class GameStore: ObservableObject {
             game.mapTiles[i].remaining = remaining - amount
         }
         game.resources.add(resource, amount)
+        if resource == "food" { game.questFoodGathered += amount }
     }
 
     /// Combat on arrival: strict-greater wins. Wounds 5% of the sent stack
@@ -526,6 +530,7 @@ final class GameStore: ObservableObject {
             game.holds[hi].shieldUntil = t + 300_000
             let newOwner = game.alliance != nil ? game.alliance!.code : game.playerName
             game.holds[hi].owner = newOwner
+            game.questHoldsAttacked += 1
             addLog("\(game.holds[hi].name) taken by \(newOwner).")
             let owned = game.holds.filter { $0.owner == newOwner }.count
             if owned >= 5 {
@@ -682,6 +687,118 @@ final class GameStore: ObservableObject {
         addLog("Breaking ground on a \(name).")
         save()
         return nil
+    }
+
+    // MARK: - Daily reward
+
+    private static let hourMs: Double = 3_600_000
+
+    /// True on a fresh save, or once more than 20 hours have passed since
+    /// the last claim.
+    func canClaimDaily() -> Bool {
+        game.lastDailyClaimAt == 0 || now() - game.lastDailyClaimAt > 20 * Self.hourMs
+    }
+
+    /// The reward for a given streak day (day 7 repeats from then on).
+    static func dailyReward(streak: Int) -> Resources {
+        switch max(1, streak) {
+        case 1: return Resources(food: 500, wood: 500, stone: 0, iron: 0, gold: 0)
+        case 2: return Resources(food: 800, wood: 800, stone: 200, iron: 0, gold: 0)
+        case 3: return Resources(food: 1000, wood: 1000, stone: 400, iron: 200, gold: 0)
+        case 4: return Resources(food: 1200, wood: 1200, stone: 600, iron: 400, gold: 50)
+        case 5: return Resources(food: 1500, wood: 1500, stone: 800, iron: 600, gold: 100)
+        case 6: return Resources(food: 2000, wood: 2000, stone: 1000, iron: 800, gold: 150)
+        default: return Resources(food: 2500, wood: 2500, stone: 1200, iron: 1000, gold: 200)
+        }
+    }
+
+    /// The streak the next claim would land on: back to 1 after a gap of
+    /// more than 28 hours (or on the first claim), otherwise +1, capped at 7.
+    var nextDailyStreak: Int {
+        let last = game.lastDailyClaimAt
+        if last == 0 || now() - last > 28 * Self.hourMs { return 1 }
+        return min(7, game.dailyStreak + 1)
+    }
+
+    /// Claims today's reward and advances the streak.
+    func claimDaily() {
+        guard !game.victory, canClaimDaily() else { return }
+        game.dailyStreak = nextDailyStreak
+        game.lastDailyClaimAt = now()
+        let reward = Self.dailyReward(streak: game.dailyStreak)
+        for resource in ["food", "wood", "stone", "iron", "gold"] {
+            game.resources.add(resource, reward.value(resource))
+        }
+        addLog("Claimed daily reward (streak \(game.dailyStreak))")
+        save()
+    }
+
+    // MARK: - Daily quests
+
+    /// One daily quest: what to do, the goal, and what it pays.
+    struct DailyQuest: Identifiable {
+        let id: String
+        let title: String
+        let goal: Int
+        let reward: Resources
+    }
+
+    static let dailyQuests: [DailyQuest] = [
+        DailyQuest(id: "gather_food", title: "Gather 1,000 food", goal: 1000,
+                   reward: Resources(food: 0, wood: 300, stone: 100, iron: 0, gold: 0)),
+        DailyQuest(id: "train_troops", title: "Train 20 troops", goal: 20,
+                   reward: Resources(food: 500, wood: 0, stone: 0, iron: 200, gold: 0)),
+        DailyQuest(id: "attack_hold", title: "Attack a hold", goal: 1,
+                   reward: Resources(food: 0, wood: 0, stone: 0, iron: 0, gold: 200)),
+    ]
+
+    /// Progress toward a quest since the last reset.
+    func questProgress(_ id: String) -> Int {
+        switch id {
+        case "gather_food": return game.questFoodGathered
+        case "train_troops": return game.questTroopsTrained
+        case "attack_hold": return game.questHoldsAttacked
+        default: return 0
+        }
+    }
+
+    func isQuestClaimed(_ id: String) -> Bool { game.dailyQuestsClaimed[id] == true }
+
+    func isQuestComplete(_ id: String) -> Bool {
+        guard let quest = Self.dailyQuests.first(where: { $0.id == id }) else { return false }
+        return questProgress(id) >= quest.goal
+    }
+
+    /// Clears claimed quests and their counters once the daily reward is
+    /// unclaimed (never) or more than 24 hours old. Fires once per window —
+    /// not again until 24 hours after the last reset — so the 1-second tick
+    /// can't wipe progress every second while the window stays open.
+    @discardableResult
+    func resetDailyQuestsIfNeeded() -> Bool {
+        let t = now()
+        let dayMs = 24 * Self.hourMs
+        let windowOpen = game.lastDailyClaimAt == 0 || t - game.lastDailyClaimAt > dayMs
+        let resetDue = game.questsResetAt == 0 || t - game.questsResetAt > dayMs
+        guard windowOpen, resetDue else { return false }
+        game.dailyQuestsClaimed = [:]
+        game.questFoodGathered = 0
+        game.questTroopsTrained = 0
+        game.questHoldsAttacked = 0
+        game.questsResetAt = t
+        return true
+    }
+
+    /// Pays out a finished quest once per reset. Unfinished or already
+    /// claimed quests do nothing.
+    func claimQuest(_ id: String) {
+        guard !game.victory, !isQuestClaimed(id), isQuestComplete(id),
+              let quest = Self.dailyQuests.first(where: { $0.id == id }) else { return }
+        game.dailyQuestsClaimed[id] = true
+        for resource in ["food", "wood", "stone", "iron", "gold"] {
+            game.resources.add(resource, quest.reward.value(resource))
+        }
+        addLog("Quest complete: \(quest.title)")
+        save()
     }
 
     // MARK: - Purchased boosts

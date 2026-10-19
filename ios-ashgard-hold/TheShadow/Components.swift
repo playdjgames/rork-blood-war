@@ -217,6 +217,7 @@ enum BWWallTab: String, CaseIterable {
     case heal = "Heal"
     case research = "Research"
     case alliance = "Alliance"
+    case daily = "Daily"
 }
 
 /// Bottom tabs, exact order: Map. Castle. Troops. Heal. Research. Alliance.
@@ -225,6 +226,8 @@ enum BWWallTab: String, CaseIterable {
 struct BWTabBar: View {
     @Binding var tab: BWWallTab
     var glowTab: BWWallTab? = nil
+    /// A tab with something waiting (a claimable reward) gets a straw dot.
+    var badgeTab: BWWallTab? = nil
 
     @State private var pulsing = false
 
@@ -235,9 +238,21 @@ struct BWTabBar: View {
                     Text(t.rawValue)
                         .font(.system(size: 12, weight: tab == t ? .bold : .medium))
                         .foregroundColor(BW.text)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.75)
+                        .padding(.horizontal, 2)
                         .frame(maxWidth: .infinity)
                         .frame(height: 64)
                         .background(tab == t ? BW.highlight : BW.panelDark)
+                        .overlay(alignment: .top) {
+                            if badgeTab == t {
+                                Circle()
+                                    .fill(Color(hex: 0xD2B56A))
+                                    .frame(width: 7, height: 7)
+                                    .padding(.top, 14)
+                                    .transition(.scale.combined(with: .opacity))
+                            }
+                        }
                         .overlay {
                             if glowTab == t {
                                 Rectangle()

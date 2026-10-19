@@ -62,6 +62,11 @@ struct TutorialStep {
             tab: .alliance
         ),
         TutorialStep(
+            title: "Daily",
+            text: "Claim a reward every day — the streak grows the haul up to day seven, but a gap of more than 28 hours starts it over. Three daily quests pay extra: gather food, train troops, take a hold.",
+            tab: .daily
+        ),
+        TutorialStep(
             title: "To war",
             text: "Raise the Keep, collect your lots, and keep training while your shield holds — Hold 1 raids every three minutes once it ends. The rest is conquest.",
             tab: .castle
