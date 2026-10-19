@@ -276,7 +276,8 @@ struct TileSheet: View {
             Picker("Hero", selection: $heroName) {
                 Text("No hero").tag(String?.none)
                 ForEach(store.game.heroes.filter { $0.assignedMarchId == nil }) { h in
-                    Text("\(h.name) \(h.title)").tag(String?.some(h.name))
+                    Text("\(h.name) — \(h.heroSkill?.effectText(level: h.skillLevel) ?? h.title)")
+                        .tag(String?.some(h.name))
                 }
             }
             .pickerStyle(.menu)

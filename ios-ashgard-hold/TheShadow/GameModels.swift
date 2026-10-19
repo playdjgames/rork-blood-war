@@ -187,13 +187,90 @@ struct ResearchState: Codable, Equatable {
 
 // MARK: - Heroes
 
-/// One hero. JSON: {name, title, level, assignedMarchId}.
+/// One hero. JSON: {name, title, level, assignedMarchId, skill, skillLevel}.
+/// `skill` is one of "gather", "attack", "march" (see `HeroSkill`).
 struct Hero: Codable, Equatable, Identifiable {
     var name: String
     var title: String
     var level: Int
     var assignedMarchId: String?
+    var skill: String
+    var skillLevel: Int = 1
     var id: String { name }
+}
+
+extension Hero {
+    private enum CodingKeys: String, CodingKey {
+        case name, title, level, assignedMarchId, skill, skillLevel
+    }
+
+    /// Old saves have no skill fields: the three starting heroes get their
+    /// fixed skill back by name, skill level starts at 1.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        name = try c.decode(String.self, forKey: .name)
+        title = try c.decode(String.self, forKey: .title)
+        level = try c.decode(Int.self, forKey: .level)
+        assignedMarchId = try c.decodeIfPresent(String.self, forKey: .assignedMarchId)
+        skill = try c.decodeIfPresent(String.self, forKey: .skill) ?? Hero.defaultSkill(for: name)
+        skillLevel = try c.decodeIfPresent(Int.self, forKey: .skillLevel) ?? 1
+    }
+
+    static func defaultSkill(for name: String) -> String {
+        switch name {
+        case "Lira": return HeroSkill.gather.rawValue
+        case "Holt": return HeroSkill.march.rawValue
+        default: return HeroSkill.attack.rawValue
+        }
+    }
+
+    var heroSkill: HeroSkill? { HeroSkill(rawValue: skill) }
+}
+
+/// The three hero skills. Level 1 gives the base bonus; each level above
+/// adds another 5 percentage points.
+enum HeroSkill: String, CaseIterable {
+    case gather, attack, march
+
+    var displayName: String {
+        switch self {
+        case .gather: return "Forager"
+        case .attack: return "Warlord"
+        case .march: return "Pathfinder"
+        }
+    }
+
+    /// Base bonus in percent at skill level 1.
+    var basePercent: Int {
+        switch self {
+        case .gather: return 20
+        case .attack: return 15
+        case .march: return 15
+        }
+    }
+
+    /// Highest skill level (keeps march time from reaching zero).
+    static let maxLevel = 10
+
+    /// Total bonus in percent at a skill level.
+    func percent(level: Int) -> Int {
+        basePercent + 5 * (min(max(level, 1), HeroSkill.maxLevel) - 1)
+    }
+
+    /// The multiplier applied to power, gather yield, or travel time.
+    func multiplier(level: Int) -> Double {
+        let p = Double(percent(level: level)) / 100
+        return self == .march ? 1 - p : 1 + p
+    }
+
+    /// "+20% gather yield", "−15% march time".
+    func effectText(level: Int) -> String {
+        switch self {
+        case .gather: return "+\(percent(level: level))% gather yield"
+        case .attack: return "+\(percent(level: level))% march power"
+        case .march: return "−\(percent(level: level))% travel time"
+        }
+    }
 }
 
 // MARK: - Holds

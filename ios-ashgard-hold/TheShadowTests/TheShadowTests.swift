@@ -402,6 +402,68 @@ struct BloodWarTests {
         #expect(store.hero("Bram")?.level == 2)
     }
 
+    // MARK: Hero skills
+
+    @Test func startingHeroSkills() {
+        let (store, _, _) = makeStore(Clock(1_000_000_000_000))
+        #expect(store.game.heroes.map(\.skill) == ["attack", "gather", "march"])
+        #expect(store.game.heroes.allSatisfy { $0.skillLevel == 1 })
+    }
+
+    @Test func bramAddsFifteenPercentPower() {
+        let (store, _, _) = makeStore(Clock(1_000_000_000_000))
+        let troops = TroopCounts(footman: 100, archer: 0, rider: 0, ram: 0)
+        let base = GameStore.power(troops, heroLevel: 1) // 1000 + 50
+        #expect(store.power(troops, heroName: "Bram") == Int(Double(base) * 1.15)) // 1207
+        // Lira (gather) adds only her level, no multiplier.
+        #expect(store.power(troops, heroName: "Lira") == base)
+    }
+
+    @Test func liraAddsTwentyPercentGather() {
+        func gathered(hero: String?) -> Int {
+            let clock = Clock(1_000_000_000_000)
+            let (store, _, _) = makeStore(clock)
+            let node = store.game.mapTiles.first { $0.type.resourceName == "wood" && ($0.remaining ?? 0) >= 2000 }!
+            let before = store.game.resources.wood
+            #expect(store.sendMarch(toX: node.x, toY: node.y, job: .gather,
+                                    troops: TroopCounts(footman: 5, archer: 0, rider: 0, ram: 0),
+                                    heroName: hero) == nil)
+            for _ in 0..<60 { clock.t += 10_000; store.tick() } // there, 60 s work, home
+            #expect(store.game.marches.isEmpty)
+            return store.game.resources.wood - before
+        }
+        let plain = gathered(hero: nil)
+        let lira = gathered(hero: "Lira")
+        #expect(plain > 0)
+        #expect(lira == Int(Double(plain) * 1.2))
+    }
+
+    @Test func holtCutsTravelTime() {
+        let (store, _, _) = makeStore(Clock(1_000_000_000_000))
+        #expect(store.travelTime(distance: 10, heroName: "Holt") == 17_000) // 20 000 × 0.85
+        #expect(store.travelTime(distance: 10, heroName: "Bram") == 20_000)
+    }
+
+    @Test func skillLevelUpCostsGoldAndRaisesBonus() {
+        let (store, _, _) = makeStore(Clock(1_000_000_000_000))
+        let troops = TroopCounts(footman: 100, archer: 0, rider: 0, ram: 0)
+        let before = store.power(troops, heroName: "Bram")
+        #expect(store.game.resources.gold == 100)
+        #expect(store.levelUpSkill(hero: "Bram") == nil)
+        #expect(store.game.resources.gold == 0)
+        #expect(store.hero("Bram")?.skillLevel == 2)
+        #expect(store.power(troops, heroName: "Bram") == Int(1050 * 1.20)) // +20% now
+        #expect(store.power(troops, heroName: "Bram") > before)
+        #expect(store.levelUpSkill(hero: "Bram") == "Need 100 more gold.")
+        #expect(store.hero("Bram")?.skillLevel == 2)
+    }
+
+    @Test func oldHeroSaveDecodesSkillByName() throws {
+        let json = #"{"name":"Holt","title":"the Ash","level":2}"#
+        let h = try JSONDecoder().decode(Hero.self, from: Data(json.utf8))
+        #expect(h.skill == "march" && h.skillLevel == 1)
+    }
+
     // MARK: 11. Persistence
 
     @Test func saveSurvivesRelaunch() {

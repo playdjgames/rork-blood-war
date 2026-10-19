@@ -65,7 +65,7 @@ struct TroopsScreen: View {
                             .font(.system(size: 13, weight: .semibold))
                             .foregroundColor(BW.text)
                     } else {
-                        SlateButtonSmall(title: "Level up") {
+                        SlateButtonSmall(title: "Rank up") {
                             error = store.levelUp(hero: hero.name)
                         }
                         .frame(width: 92)
@@ -73,10 +73,54 @@ struct TroopsScreen: View {
                 }
                 .frame(minHeight: 44)
                 if hero.assignedMarchId == nil && hero.level < 5 {
-                    Text("Cost \(store.comma(store.heroUpCost(hero))) gold")
+                    Text("Rank cost \(store.comma(store.heroUpCost(hero))) gold")
                         .font(.system(size: 11)).foregroundColor(BW.subtext)
                 }
+                skillRow(hero)
+                if hero.id != store.game.heroes.last?.id {
+                    Rectangle().fill(BW.stroke).frame(height: 1).padding(.vertical, 2)
+                }
             }
+        }
+    }
+
+    /// Skill name, level and bonus, with a 100-gold Level Up button.
+    @ViewBuilder
+    private func skillRow(_ hero: Hero) -> some View {
+        if let skill = hero.heroSkill {
+            let isMax = hero.skillLevel >= HeroSkill.maxLevel
+            HStack(spacing: 10) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("\(skill.displayName) · Skill Lv \(hero.skillLevel)")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(Color(hex: 0xD2B56A))
+                        .contentTransition(.numericText())
+                    Text(skill.effectText(level: hero.skillLevel))
+                        .font(.system(size: 12, design: .monospaced))
+                        .foregroundColor(BW.text)
+                        .contentTransition(.numericText())
+                    if !isMax && hero.assignedMarchId == nil {
+                        Text("Next: \(skill.effectText(level: hero.skillLevel + 1)) · \(GameStore.skillUpCost) gold")
+                            .font(.system(size: 11)).foregroundColor(BW.subtext)
+                    }
+                }
+                .animation(.spring(response: 0.35, dampingFraction: 0.8), value: hero.skillLevel)
+                Spacer()
+                if isMax {
+                    Text("Max")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(BW.text)
+                } else if hero.assignedMarchId == nil {
+                    SlateButtonSmall(title: "Level Up",
+                                     disabled: store.game.resources.gold < GameStore.skillUpCost) {
+                        error = store.levelUpSkill(hero: hero.name)
+                    }
+                    .frame(width: 92)
+                    .sensoryFeedback(.success, trigger: hero.skillLevel)
+                }
+            }
+            .frame(minHeight: 44)
+            .accessibilityElement(children: .contain)
         }
     }
 

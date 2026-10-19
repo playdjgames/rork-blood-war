@@ -130,9 +130,9 @@ final class GameStore: ObservableObject {
                  food: 2000, wood: 2000, shieldUntil: 0, owner: nil)
         }
         let heroes = [
-            Hero(name: "Bram", title: "the Stone", level: 1, assignedMarchId: nil),
-            Hero(name: "Lira", title: "the Reed", level: 1, assignedMarchId: nil),
-            Hero(name: "Holt", title: "the Ash", level: 1, assignedMarchId: nil),
+            Hero(name: "Bram", title: "the Stone", level: 1, assignedMarchId: nil, skill: "attack"),
+            Hero(name: "Lira", title: "the Reed", level: 1, assignedMarchId: nil, skill: "gather"),
+            Hero(name: "Holt", title: "the Ash", level: 1, assignedMarchId: nil, skill: "march"),
         ]
 
         return SaveRecord(
@@ -278,16 +278,28 @@ final class GameStore: ObservableObject {
             + heroLevel * 50
     }
 
+    /// March power with its hero: an "attack" hero multiplies the total by
+    /// 1.15 (+0.05 per skill level above 1).
     func power(_ troops: TroopCounts, heroName: String?) -> Int {
-        let heroLevel = heroName.flatMap { hero($0)?.level } ?? 0
-        return Self.power(troops, heroLevel: heroLevel)
+        let h = heroName.flatMap { hero($0) }
+        let base = Self.power(troops, heroLevel: h?.level ?? 0)
+        return Int((Double(base) * skillMultiplier(.attack, heroName: heroName)).rounded(.down))
     }
 
-    /// Travel time in ms: 2000 × manhattan distance, minimum 4 s, ×0.8 with Route maps.
-    func travelTime(distance: Int) -> Double {
+    /// The skill multiplier the named hero gives for `skill`, or 1 when the
+    /// hero is missing or has a different skill.
+    func skillMultiplier(_ skill: HeroSkill, heroName: String?) -> Double {
+        guard let h = heroName.flatMap({ hero($0) }), h.heroSkill == skill else { return 1 }
+        return skill.multiplier(level: h.skillLevel)
+    }
+
+    /// Travel time in ms: 2000 × manhattan distance, minimum 4 s, ×0.8 with Route maps,
+    /// ×0.85 (−0.05 per skill level above 1) with a "march" hero.
+    func travelTime(distance: Int, heroName: String? = nil) -> Double {
         var ms = max(4000, Double(distance) * 2000)
         if game.research.march { ms *= 0.8 }
-        return ms
+        ms *= skillMultiplier(.march, heroName: heroName)
+        return ms.rounded()
     }
 
     /// Upgrade cost at current level L, paid up front.
@@ -498,8 +510,10 @@ final class GameStore: ObservableObject {
         if let i = game.mapTiles.firstIndex(where: { $0.x == m.toX && $0.y == m.toY }) {
             game.mapTiles[i].remaining = remaining - amount
         }
-        game.resources.add(resource, amount)
-        if resource == "food" { game.questFoodGathered += amount }
+        // A "gather" hero multiplies what comes home; the node only loses the base amount.
+        let yield = Int((Double(amount) * skillMultiplier(.gather, heroName: m.heroName)).rounded(.down))
+        game.resources.add(resource, yield)
+        if resource == "food" { game.questFoodGathered += yield }
     }
 
     /// Combat on arrival: strict-greater wins. Wounds 5% of the sent stack
@@ -1010,6 +1024,27 @@ final class GameStore: ObservableObject {
         return nil
     }
 
+    static let skillUpCost = 100
+
+    /// Raises a hero's skill level by 1 for 100 gold. Heroes on a march
+    /// can't train. Returns a red error line, or nil on success.
+    @discardableResult
+    func levelUpSkill(hero name: String) -> String? {
+        guard !game.victory else { return "Game over." }
+        guard let i = game.heroes.firstIndex(where: { $0.name == name }) else { return nil }
+        guard game.heroes[i].skillLevel < HeroSkill.maxLevel else { return "Max" }
+        guard game.heroes[i].assignedMarchId == nil else { return "\(name) is on a march." }
+        guard game.resources.gold >= Self.skillUpCost else {
+            return "Need \(comma(Self.skillUpCost - game.resources.gold)) more gold."
+        }
+        game.resources.gold -= Self.skillUpCost
+        game.heroes[i].skillLevel += 1
+        let h = game.heroes[i]
+        addLog("\(h.name) skill level \(h.skillLevel)")
+        save()
+        return nil
+    }
+
     // MARK: - Marches
 
     /// Sends a march. Returns a red error line, or nil on success.
@@ -1034,7 +1069,7 @@ final class GameStore: ObservableObject {
         let distance = abs(toX - game.x) + abs(toY - game.y)
         let march = March(id: id, fromX: game.x, fromY: game.y, toX: toX, toY: toY,
                           job: job, troops: troops, heroName: heroName,
-                          startAt: t, arrivesAt: t + travelTime(distance: distance),
+                          startAt: t, arrivesAt: t + travelTime(distance: distance, heroName: heroName),
                           state: "going")
         game.marches.append(march)
         save()
