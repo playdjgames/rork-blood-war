@@ -477,6 +477,18 @@ struct BloodWarTests {
         #expect(h.skill == "march" && h.skillLevel == 1)
     }
 
+    // MARK: Sound
+
+    @Test func soundToggleDefaultsOnAndPersists() {
+        let defaults = UserDefaults(suiteName: "bw.sound.test.\(UUID().uuidString)")!
+        let player = SoundPlayer(defaults: defaults)
+        #expect(player.isEnabled) // missing key → on
+        player.isEnabled = false
+        #expect(defaults.bool(forKey: "bw.soundEnabled") == false)
+        #expect(SoundPlayer(defaults: defaults).isEnabled == false)
+        player.playCollect() // silenced: returns without playing
+    }
+
     // MARK: 11. Persistence
 
     @Test func saveSurvivesRelaunch() {

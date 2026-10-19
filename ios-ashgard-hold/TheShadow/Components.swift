@@ -167,7 +167,7 @@ struct ResourceBar: View {
         .overlay(alignment: .bottom) { Rectangle().fill(BW.stroke).frame(height: 1) }
         .sheet(isPresented: $renaming) {
             RenameSheet()
-                .presentationDetents([.height(500)])
+                .presentationDetents([.height(590)])
         }
     }
 
@@ -323,6 +323,7 @@ struct RenameSheet: View {
     @State private var name = ""
     @State private var error: String?
     @State private var suggestions: [String] = []
+    @AppStorage(SoundPlayer.enabledKey) private var soundEnabled: Bool = true
     @FocusState private var focused: Bool
 
     private var isFree: Bool { store.hasFreeRename }
@@ -394,6 +395,7 @@ struct RenameSheet: View {
                 }
             }
             tutorialSection
+            soundSection
             Spacer()
         }
         .padding(16)
@@ -443,6 +445,29 @@ struct RenameSheet: View {
                         .strokeBorder(BW.stroke, lineWidth: 1))
             }
             .accessibilityLabel("Replay the guided start")
+        }
+    }
+
+    /// Sound effects on/off, stored under `bw.soundEnabled` (default on).
+    private var soundSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("SOUND")
+                .font(.system(size: 12, weight: .bold))
+                .foregroundColor(BW.subtext)
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Sound effects")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(BW.text)
+                    Text("Collect, train, march, combat and upgrade.")
+                        .font(.system(size: 12))
+                        .foregroundColor(BW.subtext)
+                }
+                Spacer(minLength: 8)
+                Toggle("Sound effects", isOn: $soundEnabled)
+                    .labelsHidden()
+                    .tint(Color(hex: 0xD2B56A))
+            }
         }
     }
 

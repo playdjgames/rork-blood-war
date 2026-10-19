@@ -389,6 +389,13 @@ final class GameStore: ObservableObject {
     /// Returns the amount moved (0 when the lot is empty).
     @discardableResult
     func collect(_ name: String, plot: Int? = nil) -> Int {
+        let amount = collectOne(name, plot: plot)
+        if amount > 0 { SoundPlayer.shared.playCollect() }
+        return amount
+    }
+
+    /// Moves one lot's pending stock into the vault, silently.
+    private func collectOne(_ name: String, plot: Int?) -> Int {
         guard !game.victory else { return 0 }
         guard let i = game.buildings.firstIndex(where: { $0.name == name && $0.plot == plot }),
               let pending = game.buildings[i].pending, pending > 0 else { return 0 }
@@ -406,8 +413,10 @@ final class GameStore: ObservableObject {
         guard !game.victory else { return 0 }
         var total = 0
         for i in game.buildings.indices where game.buildings[i].pending != nil {
-            total += collect(game.buildings[i].name, plot: game.buildings[i].plot)
+            total += collectOne(game.buildings[i].name, plot: game.buildings[i].plot)
         }
+        // One sound for the whole sweep, not one per lot.
+        if total > 0 { SoundPlayer.shared.playCollect() }
         return total
     }
 
@@ -445,6 +454,7 @@ final class GameStore: ObservableObject {
         if up.buildingName == "Keep" {
             game.keepLevel = level("Keep")
         }
+        SoundPlayer.shared.playUpgrade()
         return true
     }
 
@@ -536,6 +546,7 @@ final class GameStore: ObservableObject {
             target = monsterPower(x: m.toX, y: m.toY)
         }
         let win = my > target
+        SoundPlayer.shared.playCombat()
         if win, m.job == .attack {
             defeatMonster(m)
         }
@@ -975,6 +986,7 @@ final class GameStore: ObservableObject {
         game.training.append(TrainingRecord(type: type, count: count,
                                             finishAt: now() + perHead * 1_000 * Double(count),
                                             kind: .train))
+        SoundPlayer.shared.playTrain()
         save()
         return nil
     }
@@ -1099,6 +1111,7 @@ final class GameStore: ObservableObject {
                           startAt: t, arrivesAt: t + travelTime(distance: distance, heroName: heroName),
                           state: "going")
         game.marches.append(march)
+        SoundPlayer.shared.playMarch()
         save()
         return nil
     }
