@@ -167,7 +167,7 @@ struct ResourceBar: View {
         .overlay(alignment: .bottom) { Rectangle().fill(BW.stroke).frame(height: 1) }
         .sheet(isPresented: $renaming) {
             RenameSheet()
-                .presentationDetents([.height(340)])
+                .presentationDetents([.height(500)])
         }
     }
 
@@ -221,8 +221,12 @@ enum BWWallTab: String, CaseIterable {
 
 /// Bottom tabs, exact order: Map. Castle. Troops. Heal. Research. Alliance.
 /// 64 points tall plus the safe area; the active tab has a slate highlight.
+/// `glowTab` pulses a straw ring on one tab — the guided start points there.
 struct BWTabBar: View {
     @Binding var tab: BWWallTab
+    var glowTab: BWWallTab? = nil
+
+    @State private var pulsing = false
 
     var body: some View {
         HStack(spacing: 0) {
@@ -234,12 +238,21 @@ struct BWTabBar: View {
                         .frame(maxWidth: .infinity)
                         .frame(height: 64)
                         .background(tab == t ? BW.highlight : BW.panelDark)
+                        .overlay {
+                            if glowTab == t {
+                                Rectangle()
+                                    .fill(Color(hex: 0xD2B56A).opacity(pulsing ? 0.1 : 0.5))
+                                    .animation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true),
+                                               value: pulsing)
+                            }
+                        }
                 }
                 .accessibilityLabel(t.rawValue)
                 .accessibilityAddTraits(tab == t ? .isSelected : [])
             }
         }
         .overlay(alignment: .top) { Rectangle().fill(BW.stroke).frame(height: 1) }
+        .onAppear { pulsing = true }
     }
 }
 
@@ -291,6 +304,7 @@ struct RenameSheet: View {
     @EnvironmentObject var store: GameStore
     @Environment(\.dismiss) private var dismiss
     private let purchases = PurchaseStore.shared
+    @ObservedObject private var tutorial = TutorialManager.shared
     @State private var name = ""
     @State private var error: String?
     @State private var suggestions: [String] = []
@@ -364,6 +378,7 @@ struct RenameSheet: View {
                         .frame(maxWidth: .infinity)
                 }
             }
+            tutorialSection
             Spacer()
         }
         .padding(16)
@@ -372,6 +387,47 @@ struct RenameSheet: View {
         .onAppear {
             name = store.game.playerName
             focused = true
+        }
+    }
+
+    /// The guided start: on/off for first launches, plus a replay button
+    /// that starts the tour the moment the sheet closes.
+    private var tutorialSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("GUIDED START")
+                .font(.system(size: 12, weight: .bold))
+                .foregroundColor(BW.subtext)
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Offer the tour on first login")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(BW.text)
+                    Text("Off — never again. Replay below any time.")
+                        .font(.system(size: 12))
+                        .foregroundColor(BW.subtext)
+                }
+                Spacer(minLength: 8)
+                Toggle("", isOn: Binding(
+                    get: { tutorial.autoEnabled },
+                    set: { tutorial.autoEnabled = $0 }
+                ))
+                .labelsHidden()
+                .tint(Color(hex: 0xD2B56A))
+            }
+            Button {
+                tutorial.start()
+                dismiss()
+            } label: {
+                Text("Replay the guided start")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundColor(BW.text)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 44)
+                    .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(BW.panel))
+                    .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .strokeBorder(BW.stroke, lineWidth: 1))
+            }
+            .accessibilityLabel("Replay the guided start")
         }
     }
 

@@ -11,6 +11,7 @@ import SwiftUI
 
 struct ContentView: View {
     @StateObject private var store = GameStore()
+    @ObservedObject private var tutorial = TutorialManager.shared
     @State private var tab: BWWallTab = .castle // home: the castle yard, opens on launch
     @Environment(\.scenePhase) private var scenePhase
 
@@ -31,14 +32,24 @@ struct ContentView: View {
             ResourceBar()
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            BWTabBar(tab: $tab)
+            BWTabBar(tab: $tab, glowTab: tutorial.glowTab)
         }
         .overlay {
             if store.game.victory {
                 VictoryOverlay()
             }
+            if tutorial.isActive {
+                TutorialOverlay(manager: tutorial, tab: $tab)
+            }
         }
         .environmentObject(store)
+        .onAppear {
+            // Let the hold art settle for a beat before the tour speaks.
+            Task { @MainActor in
+                try? await Task.sleep(for: .seconds(0.6))
+                tutorial.startIfFirstLaunch()
+            }
+        }
         .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { _ in
             store.tick()
         }
