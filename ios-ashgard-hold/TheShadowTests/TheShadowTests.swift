@@ -277,15 +277,28 @@ struct BloodWarTests {
     @Test func attackMonsterWin() {
         let clock = Clock(1_000_000_000_000)
         let (store, _, _) = makeStore(clock)
-        store.inject { g in g.troops = TroopCounts(footman: 60, archer: 0, rider: 0, ram: 0) }
+        store.inject { g in g.troops = TroopCounts(footman: 100, archer: 0, rider: 0, ram: 0) }
         #expect(store.sendMarch(toX: 20, toY: 20, job: .attack,
-                                troops: TroopCounts(footman: 60, archer: 0, rider: 0, ram: 0),
+                                troops: TroopCounts(footman: 100, archer: 0, rider: 0, ram: 0),
                                 heroName: nil) == nil)
-        // Power 600 > 500 → win.
+        // Power 1000 > monster 400 + 10×40 = 800 → win + loot.
         clock.t += 20_000
         store.tick()
-        #expect(store.game.resources.gold == 200)
-        #expect(store.game.wounded.footman == 3)
+        #expect(store.game.resources.gold >= 120 && store.game.resources.gold <= 180)
+        #expect(store.game.resources.food >= 200 && store.game.resources.food <= 1600)
+        #expect(store.game.resources.wood >= 200)
+        #expect(store.game.resources.iron >= 100)
+        #expect(store.tile(20, 20)?.type == .plain) // monster gone
+        #expect(store.game.log.first?.contains("Defeated monster at 20,20") == true)
+        #expect(store.game.wounded.footman == 5)
+    }
+
+    @Test func monsterPowerScalesWithDistance() {
+        let (store, _, _) = makeStore(Clock(1_000_000_000_000))
+        // Castle at 25,25: distance 0 → 400, distance 10 → 800, farther → stronger.
+        #expect(store.monsterPower(x: 25, y: 25) == 400)
+        #expect(store.monsterPower(x: 20, y: 20) == 800)
+        #expect(store.monsterPower(x: 10, y: 10) > store.monsterPower(x: 22, y: 22))
     }
 
     // MARK: 9. Healing

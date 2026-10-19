@@ -516,6 +516,12 @@ final class GameStore: ObservableObject {
         if resource == "food" { game.questFoodGathered += yield }
     }
 
+    /// Monster power at a tile: 400 base + 40 per manhattan step from the
+    /// player's castle at 25,25 — farther monsters hit harder.
+    func monsterPower(x: Int, y: Int) -> Int {
+        400 + (abs(x - game.x) + abs(y - game.y)) * 40
+    }
+
     /// Combat on arrival: strict-greater wins. Wounds 5% of the sent stack
     /// (rounded up), moved to wounded while beds remain; the rest is deleted.
     /// Returns the march with the wounded removed from the returning stack.
@@ -527,11 +533,11 @@ final class GameStore: ObservableObject {
             holdRef = hold(at: m.toX, y: m.toY)
             target = holdRef?.power ?? 0
         } else {
-            target = 500
+            target = monsterPower(x: m.toX, y: m.toY)
         }
         let win = my > target
         if win, m.job == .attack {
-            game.resources.gold += 100
+            defeatMonster(m)
         }
         if win, m.job == .attackHold, let h = holdRef,
            let hi = game.holds.firstIndex(where: { $0.id == h.id }) {
@@ -557,6 +563,27 @@ final class GameStore: ObservableObject {
         var out = m
         out.troops.subtract(woundedOut)
         return out
+    }
+
+    /// Monster kill loot: random 200–600 food, 200–600 wood, 100–300 iron
+    /// and 20–80 gold.
+    static func monsterLoot() -> Resources {
+        Resources(food: .random(in: 200...600), wood: .random(in: 200...600),
+                  stone: 0, iron: .random(in: 100...300), gold: .random(in: 20...80))
+    }
+
+    /// Pays a monster kill's loot and clears the tile back to plain so the
+    /// monster does not respawn immediately.
+    private func defeatMonster(_ m: March) {
+        let loot = Self.monsterLoot()
+        for resource in ["food", "wood", "iron", "gold"] {
+            game.resources.add(resource, loot.value(resource))
+        }
+        addLog("Defeated monster at \(m.toX),\(m.toY) — gained resources")
+        if let i = game.mapTiles.firstIndex(where: { $0.x == m.toX && $0.y == m.toY }),
+           game.mapTiles[i].type == .monster {
+            game.mapTiles[i] = MapTile(type: .plain, x: m.toX, y: m.toY, remaining: nil)
+        }
     }
 
     /// Wounds 5% of each troop type (rounded up) while beds remain; extras die.

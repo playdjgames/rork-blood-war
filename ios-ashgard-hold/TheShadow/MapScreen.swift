@@ -209,7 +209,7 @@ struct TileSheet: View {
             Text("Your keep. Level \(store.game.keepLevel).")
                 .bodyLine()
         case .monster:
-            Text("Power 500. Win: +100 gold, 5% of the sent stack is wounded. Lose: 5% wounded, no gold.")
+            Text("Power \(store.monsterPower(x: tile.x, y: tile.y)). Farther from your castle, stronger. Win: loot of food, wood, iron and gold — the monster falls. Lose: 5% wounded, the monster stays.")
                 .bodyLine()
             if store.game.marches.count < 3 {
                 SlateButtonSmall(title: "Attack") { picking = true }
