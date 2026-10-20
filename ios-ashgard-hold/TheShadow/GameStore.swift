@@ -168,6 +168,17 @@ final class GameStore: ObservableObject {
         }
     }
 
+    /// Deletes the save file and starts over from the new-game record. The
+    /// production and raid clocks restart now so nothing catches up.
+    func resetSave() {
+        try? FileManager.default.removeItem(at: saveURL)
+        let t = now()
+        defaults.set(t, forKey: lastProductionKey)
+        defaults.set(t, forKey: lastIncomingKey)
+        game = Self.newGame(now: t)
+        save()
+    }
+
     // MARK: - Derived values
 
     func building(_ name: String, plot: Int?) -> Building? {

@@ -28,6 +28,12 @@ final class SoundPlayer {
         set { defaults.set(newValue, forKey: Self.enabledKey) }
     }
 
+    /// The inverse of `isEnabled`, same `bw.soundEnabled` key.
+    var isMuted: Bool {
+        get { !isEnabled }
+        set { isEnabled = !newValue }
+    }
+
     /// iOS system sound IDs, each one distinct.
     private enum Effect: SystemSoundID {
         case collect = 1057 // light "tink"

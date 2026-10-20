@@ -130,12 +130,31 @@ struct CastleScreen: View {
     @EnvironmentObject var store: GameStore
     @State private var selected: HoldBuildingRef?
     @State private var buildPlot: PlotRef?
+    @State private var showingSettings = false
 
     var body: some View {
         HoldWorld(selected: selected,
                   onPick: { selected = $0 },
                   onPlotTap: { buildPlot = PlotRef(index: $0) })
+        .overlay(alignment: .topTrailing) {
+            Button { showingSettings = true } label: {
+                Image(systemName: "gearshape.fill")
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundColor(BW.text)
+                    .frame(width: 44, height: 44)
+                    .background(Circle().fill(BW.panelDark.opacity(0.88)))
+                    .overlay(Circle().strokeBorder(BW.stroke, lineWidth: 1))
+                    .shadow(color: .black.opacity(0.35), radius: 4, y: 2)
+            }
+            .padding(10)
+            .accessibilityLabel("Settings and log")
+        }
         .bwScreen()
+        .sheet(isPresented: $showingSettings) {
+            SettingsLogSheet()
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+        }
         .sheet(item: $selected) { ref in
             BuildingUpgradeSheet(buildingName: ref.name, plot: ref.plot)
                 .presentationDetents([.height(380)])
@@ -143,6 +162,99 @@ struct CastleScreen: View {
         .sheet(item: $buildPlot) { ref in
             PlotBuildSheet(plot: ref.index)
                 .presentationDetents([.height(520)])
+        }
+    }
+}
+
+// MARK: - Settings & log sheet
+
+/// The last 20 log lines, a sound toggle, and Reset Save behind a confirm.
+private struct SettingsLogSheet: View {
+    @EnvironmentObject var store: GameStore
+    @Environment(\.dismiss) private var dismiss
+    @State private var soundOn = !SoundPlayer.shared.isMuted
+    @State private var confirmingReset = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Settings")
+                .font(.system(size: 22, weight: .bold))
+                .foregroundColor(BW.text)
+
+            Panel {
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Sound effects")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundColor(BW.text)
+                        Text(soundOn ? "On" : "Muted")
+                            .font(.system(size: 12)).foregroundColor(BW.subtext)
+                    }
+                    Spacer()
+                    Toggle("Sound effects", isOn: $soundOn)
+                        .labelsHidden()
+                        .tint(Color.straw)
+                        .onChange(of: soundOn) { _, on in
+                            SoundPlayer.shared.isMuted = !on
+                        }
+                }
+                .frame(minHeight: 44)
+            }
+
+            Text("LOG")
+                .font(.system(size: 12, weight: .bold))
+                .foregroundColor(BW.subtext)
+            Group {
+                if store.game.log.isEmpty {
+                    Text("Nothing logged yet.").bodyLine()
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(10)
+                } else {
+                    ScrollView {
+                        LazyVStack(alignment: .leading, spacing: 0) {
+                            // The log is stored newest first.
+                            ForEach(Array(store.game.log.prefix(20).enumerated()), id: \.offset) { i, line in
+                                Text(line)
+                                    .font(.system(size: 12, design: .monospaced))
+                                    .foregroundColor(i == 0 ? BW.text : BW.subtext)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .padding(.vertical, 6)
+                                if i < min(20, store.game.log.count) - 1 {
+                                    Rectangle().fill(BW.stroke).frame(height: 1)
+                                }
+                            }
+                        }
+                        .padding(.horizontal, 10)
+                    }
+                }
+            }
+            .frame(maxHeight: .infinity, alignment: .top)
+            .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(BW.panel))
+            .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .strokeBorder(BW.stroke, lineWidth: 1))
+
+            Button { confirmingReset = true } label: {
+                Text("Reset Save")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundColor(BW.red)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 48)
+                    .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(BW.panelDark))
+                    .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .strokeBorder(BW.red.opacity(0.6), lineWidth: 1))
+            }
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .background(BW.background)
+        .confirmationDialog("Reset your save?", isPresented: $confirmingReset, titleVisibility: .visible) {
+            Button("Reset Save", role: .destructive) {
+                store.resetSave()
+                dismiss()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Your hold, troops, heroes, resources and alliance are erased and a new game starts. This can't be undone.")
         }
     }
 }
