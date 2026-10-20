@@ -1179,6 +1179,32 @@ final class GameStore: ObservableObject {
         return nil
     }
 
+    /// Creates an alliance with a player-chosen 4-letter code; the player is
+    /// owner and only member. Returns a red error line or nil.
+    @discardableResult
+    func createAlliance(name: String, code: String) -> String? {
+        guard !game.victory else { return "Game over." }
+        guard game.alliance == nil else { return nil }
+        let trimmed = name.trimmingCharacters(in: .whitespaces)
+        guard trimmed.count >= 3, trimmed.count <= 16, trimmed.allSatisfy({ $0.isLetter }) else {
+            return "Name: 3 to 16 letters"
+        }
+        let tag = code.trimmingCharacters(in: .whitespaces).uppercased()
+        guard tag.count == 4, tag.allSatisfy({ $0.isASCII && $0.isLetter }) else {
+            return "Code: exactly 4 letters"
+        }
+        var reg = registry()
+        guard reg[tag] == nil else { return "Code \(tag) is taken." }
+        let record = AllianceRecord(name: trimmed, code: tag, owner: game.playerName,
+                                    members: [game.playerName], board: [])
+        game.alliance = record
+        reg[tag] = record
+        writeRegistry(reg)
+        addLog("Founded \(trimmed) [\(tag)]")
+        save()
+        return nil
+    }
+
     /// Joins by code. Only codes created on this device work.
     @discardableResult
     func joinAlliance(code: String) -> String? {
