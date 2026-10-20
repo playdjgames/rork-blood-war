@@ -2,8 +2,8 @@
 //  TroopsScreen.swift
 //  TheShadow
 //
-//  Blood War — the Troops tab (train rows, heroes, marches) and the Heal tab
-//  (hospital beds and the heal rows).
+//  Blood War — the Troops tab (train rows, heroes, marches). The Heal tab
+//  lives in HealScreen.swift.
 //
 
 import SwiftUI
@@ -272,108 +272,5 @@ private struct TrainRow: View {
                     .foregroundColor(BW.subtext)
             }
         }
-    }
-}
-
-// MARK: - Heal screen
-
-struct HealScreen: View {
-    @EnvironmentObject var store: GameStore
-    @State private var error: String?
-
-    var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 12) {
-                Panel {
-                    Text("Hospital")
-                        .font(.system(size: 22, weight: .bold))
-                        .foregroundColor(BW.text)
-                    Text("Beds used: \(store.woundedTotal) / \(store.beds)")
-                        .font(.system(size: 14)).foregroundColor(BW.subtext)
-                }
-                if let e = error { Text(e).redLine() }
-                ForEach(GameStore.troopTypes, id: \.self) { type in
-                    HealRow(type: type, onHeal: { heal(type) })
-                }
-            }
-            .padding(12)
-        }
-        .bwScreen()
-    }
-
-    private func heal(_ type: String) {
-        error = store.heal(type, count: store.game.wounded.value(type))
-    }
-}
-
-/// One wounded row: photo, wounded count, heal cost, Heal button.
-private struct HealRow: View {
-    @EnvironmentObject var store: GameStore
-    let type: String
-    let onHeal: () -> Void
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 10) {
-                Image(troopPhoto(type))
-                    .resizable()
-                    .scaledToFill()
-                    .frame(width: 44, height: 44)
-                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        .strokeBorder(BW.stroke, lineWidth: 1))
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(type.capitalized)
-                        .font(.system(size: 15, weight: .bold))
-                        .foregroundColor(BW.text)
-                    Text("Wounded \(store.game.wounded.value(type))")
-                        .font(.system(size: 11)).foregroundColor(BW.subtext)
-                    Text(healCostLine)
-                        .font(.system(size: 11)).foregroundColor(BW.subtext)
-                }
-                Spacer()
-                SlateButtonSmall(title: "Heal",
-                                 disabled: store.game.wounded.value(type) == 0 || queueBusy,
-                                 action: onHeal)
-                    .frame(width: 92)
-            }
-            .frame(minHeight: 56)
-            if let record = store.game.training.first, record.kind == .heal {
-                TimelineView(.periodic(from: .now, by: 1)) { context in
-                    let left = record.finishAt - context.date.timeIntervalSince1970 * 1000
-                    let s = max(0, Int(ceil(left / 1000)))
-                    Text("Healing \(record.count), \(String(format: "%d:%02d", s / 60, s % 60))")
-                        .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                        .foregroundColor(BW.subtext)
-                }
-            }
-        }
-        .padding(10)
-        .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(BW.panel))
-        .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous)
-            .strokeBorder(BW.stroke, lineWidth: 1))
-    }
-
-    private func troopPhoto(_ type: String) -> String {
-        switch type {
-        case "footman": return "medieval_footman_spear_shield"
-        case "archer": return "medieval_archer_longbow"
-        case "rider": return "medieval_rider_on_horse"
-        case "ram": return "battering_ram"
-        default: return "medieval_footman_spear_shield"
-        }
-    }
-
-    private var queueBusy: Bool { !store.game.training.isEmpty }
-
-    private var healCostLine: String {
-        let wounded = store.game.wounded.value(type)
-        let cost = store.healCost(type, count: wounded)
-        var parts: [String] = []
-        if cost.food > 0 { parts.append("\(store.comma(cost.food)) food") }
-        if cost.wood > 0 { parts.append("\(store.comma(cost.wood)) wood") }
-        if cost.stone > 0 { parts.append("\(store.comma(cost.stone)) stone") }
-        if cost.iron > 0 { parts.append("\(store.comma(cost.iron)) iron") }
-        return parts.isEmpty ? "—" : parts.joined(separator: ", ")
     }
 }
