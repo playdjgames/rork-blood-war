@@ -14,9 +14,14 @@ struct TheShadowApp: App {
         #if DEBUG
         Purchases.logLevel = .debug
         #endif
-        // Release builds switch to the App Store key once App Store Connect
-        // is linked and its RevenueCat key is set.
-        Purchases.configure(withAPIKey: Config.EXPO_PUBLIC_REVENUECAT_TEST_API_KEY)
+        let key = Config.EXPO_PUBLIC_REVENUECAT_TEST_API_KEY
+        if !key.isEmpty {
+            Purchases.configure(withAPIKey: key)
+        }
+        // If the key is empty (local/dev/Rork export without env injection),
+        // skip configure entirely. PurchaseStore will simply show "Store not ready"
+        // and the game will launch and run normally. Real key is still injected
+        // at App Store build time when the env is present.
     }
 
     var body: some Scene {
