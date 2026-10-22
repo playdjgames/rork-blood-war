@@ -16,6 +16,17 @@ import SwiftUI
 final class GameStore: ObservableObject {
     @Published private(set) var game: SaveRecord
 
+    // MARK: Online state (nil/false while playing locally)
+
+    /// Supabase user id once the anonymous session is up.
+    @Published var userId: String?
+    @Published var isOnline = false
+    @Published var syncBusy = false
+    @Published var syncError: String?
+    @Published var pendingSyncCount = 0
+    /// The online layer; nil until `startOnline()` (tests never start it).
+    private(set) var sync: SupabaseSync?
+
     /// The 14 buildings in their exact spec order.
     static let buildingOrder = ["Keep", "Farm", "Timber yard", "Quarry", "Mine", "Vault",
                                 "Barracks", "Range", "Stable", "Workshop", "Wall",
@@ -556,7 +567,12 @@ final class GameStore: ObservableObject {
         } else {
             target = monsterPower(x: m.toX, y: m.toY)
         }
-        let win = my > target
+        var win = my > target
+        // Online, the shared map's shields are binding: a shielded hold cannot change hands.
+        if win, sync != nil, m.job == .attackHold, let h = holdRef, h.shieldUntil > t {
+            win = false
+            addLog("\(h.name) is shielded — the march turned back.")
+        }
         SoundPlayer.shared.playCombat()
         if win, m.job == .attack {
             defeatMonster(m)
@@ -574,6 +590,7 @@ final class GameStore: ObservableObject {
             game.holds[hi].owner = newOwner
             game.questHoldsAttacked += 1
             addLog("\(game.holds[hi].name) taken by \(newOwner).")
+            claimOnServer(x: game.holds[hi].x, y: game.holds[hi].y, power: my)
             let owned = game.holds.filter { $0.owner == newOwner }.count
             if owned >= 5 {
                 game.victory = true
@@ -1204,6 +1221,27 @@ final class GameStore: ObservableObject {
         guard tag.count == 4, tag.allSatisfy({ $0.isASCII && $0.isLetter }) else {
             return "Code: exactly 4 letters"
         }
+        if let sync {
+            // Online: the server owns the code. Write there first, then the poll
+            // fills local state; offline it is founded locally and queued.
+            let pending = AllianceRecord(name: trimmed, code: tag, owner: game.playerName,
+                                         members: [game.playerName], board: [],
+                                         ownerId: userId, memberIds: userId.map { [$0] },
+                                         serverId: nil, pendingSync: true)
+            runOnline(.create(name: trimmed, code: tag), via: sync) { [weak self] outcome in
+                guard let self else { return }
+                switch outcome {
+                case .done:
+                    self.addLog("Founded \(trimmed) [\(tag)]")
+                case .queued:
+                    if self.game.alliance == nil { self.game.alliance = pending }
+                    self.addLog("Founded \(trimmed) [\(tag)] — syncs when online")
+                case .failed:
+                    break
+                }
+            }
+            return nil
+        }
         var reg = registry()
         guard reg[tag] == nil else { return "Code \(tag) is taken." }
         let record = AllianceRecord(name: trimmed, code: tag, owner: game.playerName,
@@ -1216,11 +1254,35 @@ final class GameStore: ObservableObject {
         return nil
     }
 
-    /// Joins by code. Only codes created on this device work.
+    /// Joins by code. Online it joins the shared alliance; locally only codes
+    /// created on this device work.
     @discardableResult
     func joinAlliance(code: String) -> String? {
         guard !game.victory else { return "Game over." }
         guard game.alliance == nil else { return nil }
+        if let sync {
+            let tag = code.trimmingCharacters(in: .whitespaces).uppercased()
+            guard tag.count == 4, tag.allSatisfy({ $0.isASCII && $0.isLetter }) else {
+                return "Code: exactly 4 letters"
+            }
+            let pending = AllianceRecord(name: "Joining…", code: tag, owner: "—",
+                                         members: [game.playerName], board: [],
+                                         ownerId: nil, memberIds: userId.map { [$0] },
+                                         serverId: nil, pendingSync: true)
+            runOnline(.join(code: tag), via: sync) { [weak self] outcome in
+                guard let self else { return }
+                switch outcome {
+                case .done:
+                    self.addLog("Joined \(self.game.alliance?.name ?? tag) [\(tag)]")
+                case .queued:
+                    if self.game.alliance == nil { self.game.alliance = pending }
+                    self.addLog("Join [\(tag)] queued — syncs when online")
+                case .failed:
+                    break
+                }
+            }
+            return nil
+        }
         var reg = registry()
         guard var record = reg[code.uppercased()] else { return "No code match." }
         if !record.members.contains(game.playerName) {
@@ -1236,12 +1298,42 @@ final class GameStore: ObservableObject {
     func post(_ text: String) {
         guard !game.victory else { return }
         guard var a = game.alliance, !text.trimmingCharacters(in: .whitespaces).isEmpty else { return }
-        a.board.append(AlliancePost(at: now(), author: game.playerName,
-                                    text: text.trimmingCharacters(in: .whitespaces)))
+        let clean = text.trimmingCharacters(in: .whitespaces)
+        a.board.append(AlliancePost(at: now(), author: game.playerName, text: clean,
+                                    authorId: a.isShared ? userId : nil))
         if a.board.count > 20 { a.board = Array(a.board.suffix(20)) }
         game.alliance = a
         syncRegistry(a)
         save()
+        // Shown at once; the server insert then refreshes the board.
+        if let sync, a.isShared {
+            runOnline(.post(text: String(clean.prefix(280))), via: sync) { _ in }
+        }
+    }
+
+    /// Owner removes the member at `index` (online: by server id).
+    func removeMember(at index: Int) {
+        guard let a = game.alliance, a.members.indices.contains(index) else { return }
+        if let sync, a.isShared {
+            guard isAllianceOwner, let ids = a.memberIds, ids.indices.contains(index),
+                  ids[index] != a.ownerId else { return }
+            let target = ids[index]
+            var updated = a
+            updated.members.remove(at: index)
+            updated.memberIds?.remove(at: index)
+            game.alliance = updated
+            save()
+            runOnline(.kick(userId: target), via: sync) { _ in }
+        } else {
+            removeMember(a.members[index])
+        }
+    }
+
+    /// True when the player founded the current alliance.
+    var isAllianceOwner: Bool {
+        guard let a = game.alliance else { return false }
+        if let oid = a.ownerId, let uid = userId { return oid == uid }
+        return a.owner == game.playerName
     }
 
     func removeMember(_ name: String) {
@@ -1254,13 +1346,23 @@ final class GameStore: ObservableObject {
     }
 
     func leaveAlliance() {
-        guard let a = game.alliance, a.owner != game.playerName else { return }
+        guard let a = game.alliance, !isAllianceOwner else { return }
         game.alliance = nil
         save()
+        if let sync, a.isShared {
+            runOnline(.leave, via: sync) { _ in }
+        }
     }
 
     func disbandAlliance() {
-        guard let a = game.alliance, a.owner == game.playerName else { return }
+        guard let a = game.alliance, isAllianceOwner else { return }
+        if let sync, a.isShared {
+            game.alliance = nil
+            addLog("Disbanded \(a.name).")
+            save()
+            runOnline(.leave, via: sync) { _ in }
+            return
+        }
         var reg = registry()
         reg.removeValue(forKey: a.code)
         writeRegistry(reg)
@@ -1269,11 +1371,106 @@ final class GameStore: ObservableObject {
     }
 
     private func syncRegistry(_ a: AllianceRecord) {
+        guard !a.isShared else { return }
         var reg = registry()
         if reg[a.code] != nil {
             reg[a.code] = a
             writeRegistry(reg)
         }
+    }
+
+    // MARK: - Online (Supabase)
+
+    /// Signs in anonymously and starts the 4 s shared-state poll. Without
+    /// Supabase keys in the build this does nothing and play stays local.
+    func startOnline() {
+        guard sync == nil, let s = SupabaseSync.make(store: self) else { return }
+        sync = s
+        s.start()
+    }
+
+    /// Sends one action, showing "Syncing…" meanwhile and the server's
+    /// refusal as the red error line. `then` runs on the main actor.
+    private func runOnline(_ action: SyncAction, via sync: SupabaseSync,
+                           then: @escaping (SyncOutcome) -> Void) {
+        syncError = nil
+        syncBusy = true
+        Task { [weak self] in
+            let outcome = await sync.send(action)
+            guard let self else { return }
+            self.syncBusy = false
+            if case let .failed(message) = outcome { self.syncError = message }
+            then(outcome)
+            self.save()
+        }
+    }
+
+    private func claimOnServer(x: Int, y: Int, power: Int) {
+        guard let sync else { return }
+        Task { [weak self] in
+            let outcome = await sync.send(.claim(x: x, y: y, power: power))
+            guard let self else { return }
+            if case let .failed(message) = outcome {
+                self.addLog("Hold claim refused: \(message)")
+                self.save()
+            }
+        }
+    }
+
+    /// Mirrors the server's view of the player's alliance. Clears a shared
+    /// alliance the server no longer lists (kicked or disbanded) once no
+    /// queued work could still create it.
+    func applyServerAlliance(_ snap: ServerAllianceSnapshot?, queueEmpty: Bool) {
+        if let snap {
+            let ownerName = snap.members.first { $0.id == snap.ownerId }?.name ?? "Former ally"
+            let record = AllianceRecord(
+                name: snap.name, code: snap.code, owner: ownerName,
+                members: snap.members.map(\.name),
+                board: snap.posts.map { AlliancePost(at: $0.at, author: $0.authorName,
+                                                     text: $0.text, authorId: $0.authorId) },
+                ownerId: snap.ownerId, memberIds: snap.members.map(\.id),
+                serverId: snap.id, pendingSync: nil)
+            if game.alliance != record {
+                game.alliance = record
+                save()
+            }
+        } else if queueEmpty, let a = game.alliance, a.isShared {
+            game.alliance = nil
+            addLog(a.pendingSync == true ? "Could not sync \(a.code)." : "You are no longer in \(a.name).")
+            save()
+        }
+    }
+
+    /// Mirrors the shared holds table: owner, power and shield per hold.
+    /// Holds your alliance owns carry its code (so victory counts them).
+    func applyServerHolds(_ rows: [ServerHold]) {
+        let mine = game.alliance?.serverId
+        var changed = false
+        for row in rows {
+            guard let i = game.holds.firstIndex(where: { $0.x == row.x && $0.y == row.y }) else { continue }
+            let owner: String?
+            if let oid = row.ownerAllianceId {
+                owner = oid == mine ? game.alliance?.code : (row.ownerName ?? "Rival alliance")
+            } else {
+                owner = nil
+            }
+            let shield = (row.shieldUntil?.timeIntervalSince1970 ?? 0) * 1000
+            if game.holds[i].owner != owner || game.holds[i].power != row.power
+                || abs(game.holds[i].shieldUntil - shield) > 2000 {
+                game.holds[i].owner = owner
+                game.holds[i].power = row.power
+                game.holds[i].shieldUntil = shield
+                changed = true
+            }
+        }
+        guard changed else { return }
+        if !game.victory, let code = game.alliance?.code,
+           game.holds.filter({ $0.owner == code }).count >= 5 {
+            game.victory = true
+            game.victoryWinner = code
+            addLog("Victory — \(code) controls 5 holds.")
+        }
+        save()
     }
 
     // MARK: - Player name

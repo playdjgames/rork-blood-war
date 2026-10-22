@@ -233,8 +233,21 @@ struct TileSheet: View {
         let hold = store.hold(at: tile.x, y: tile.y)
         Text("Power \(hold?.power ?? 0). Win: take 10% of its food and wood; it is shielded 5 minutes. Lose: 5% wounded, no loot.")
             .bodyLine()
+        if let hold {
+            HStack {
+                Text("Held by").bodyLine()
+                Spacer()
+                Text(holdOwnerLabel(hold))
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(hold.owner == nil ? BW.subtext : BW.text)
+            }
+        }
         if hold != nil, (hold!.shieldUntil) > store.now() {
-            Text("Shielded").redLine()
+            TimelineView(.periodic(from: .now, by: 1)) { context in
+                let left = max(0, Int((hold!.shieldUntil - context.date.timeIntervalSince1970 * 1000) / 1000))
+                Text(left > 0 ? "Shielded \(left / 60):\(String(format: "%02d", left % 60))" : "Shield down")
+                    .redLine()
+            }
         }
         if store.isShielded {
             Text("Drop shield to attack").redLine()
@@ -253,6 +266,13 @@ struct TileSheet: View {
         } else {
             Text("Marches allowed: 3").redLine()
         }
+    }
+
+    /// Your alliance's own holds read as its name; rivals by their banner.
+    private func holdOwnerLabel(_ hold: Hold) -> String {
+        guard let owner = hold.owner else { return "Unclaimed" }
+        if let a = store.game.alliance, owner == a.code { return "\(a.name) [\(a.code)]" }
+        return owner
     }
 
     // The picker: four steppers capped at idle troops, hero picker, Send.

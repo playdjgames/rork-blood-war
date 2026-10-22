@@ -8,6 +8,11 @@
       "settings": {
         "displayName": "Blood War"
       }
+    },
+    {
+      "name": "Backend",
+      "path": "backend",
+      "framework": "supabase"
     }
   ]
 }

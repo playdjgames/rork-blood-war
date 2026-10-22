@@ -51,6 +51,7 @@ struct ContentView: View {
                 try? await Task.sleep(for: .seconds(0.6))
                 tutorial.startIfFirstLaunch()
             }
+            store.startOnline()
         }
         .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { _ in
             store.tick()

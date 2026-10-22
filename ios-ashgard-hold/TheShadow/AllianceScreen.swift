@@ -31,10 +31,14 @@ struct AllianceScreen: View {
                     createPanel
                     joinPanel
                 }
-                if let e = error { Text(e).redLine() }
+                if let e = error ?? store.syncError { Text(e).redLine() }
+                syncStatus
             }
             .padding(12)
             .animation(.spring(response: 0.4, dampingFraction: 0.85), value: store.game.alliance == nil)
+        }
+        .onChange(of: store.game.alliance == nil) { _, isNil in
+            if !isNil { newName = ""; newCode = ""; joinCode = ""; error = nil }
         }
         .scrollDismissesKeyboard(.interactively)
         .bwScreen()
@@ -53,7 +57,36 @@ struct AllianceScreen: View {
     }
 
     private var isOwner: Bool {
-        store.game.alliance?.owner == store.game.playerName
+        store.isAllianceOwner
+    }
+
+    /// One quiet line: syncing, queued offline, or shared.
+    @ViewBuilder private var syncStatus: some View {
+        if store.syncBusy {
+            HStack(spacing: 6) {
+                ProgressView().controlSize(.mini).tint(BW.subtext)
+                Text("Syncing…").bodyLine()
+            }
+        } else if store.pendingSyncCount > 0 {
+            Text("Offline — \(store.pendingSyncCount) action\(store.pendingSyncCount == 1 ? "" : "s") queued")
+                .bodyLine()
+        } else if store.userId != nil, store.game.alliance?.serverId != nil {
+            Text(store.isOnline ? "Shared with your allies" : "Reconnecting…").bodyLine()
+        }
+    }
+
+    private func isMe(_ index: Int, in a: AllianceRecord) -> Bool {
+        if let ids = a.memberIds, ids.indices.contains(index), let uid = store.userId {
+            return ids[index] == uid
+        }
+        return a.members[index] == store.game.playerName
+    }
+
+    private func isOwnerRow(_ index: Int, in a: AllianceRecord) -> Bool {
+        if let ids = a.memberIds, ids.indices.contains(index), let oid = a.ownerId {
+            return ids[index] == oid
+        }
+        return a.members[index] == a.owner
     }
 
     private var leaveTitle: String {
@@ -82,9 +115,9 @@ struct AllianceScreen: View {
                 }
             Text("Exactly 4 letters — allies join with it").bodyLine()
             SlateButton(title: "Create",
-                        disabled: newName.trimmingCharacters(in: .whitespaces).count < 3 || newCode.count != 4) {
+                        disabled: store.syncBusy
+                            || newName.trimmingCharacters(in: .whitespaces).count < 3 || newCode.count != 4) {
                 error = store.createAlliance(name: newName, code: newCode)
-                if error == nil { newName = ""; newCode = "" }
             }
         }
     }
@@ -97,9 +130,9 @@ struct AllianceScreen: View {
             BWTextField(placeholder: "Code", text: $joinCode, monospaced: true)
                 .textInputAutocapitalization(.characters)
                 .autocorrectionDisabled()
-            SlateButton(title: "Join", disabled: joinCode.trimmingCharacters(in: .whitespaces).isEmpty) {
+            SlateButton(title: "Join",
+                        disabled: store.syncBusy || joinCode.trimmingCharacters(in: .whitespaces).isEmpty) {
                 error = store.joinAlliance(code: joinCode.trimmingCharacters(in: .whitespaces))
-                if error == nil { joinCode = "" }
             }
         }
     }
@@ -142,19 +175,21 @@ struct AllianceScreen: View {
                     .font(.system(size: 13, weight: .bold, design: .monospaced))
                     .foregroundColor(BW.subtext)
             }
-            ForEach(a.members, id: \.self) { member in
+            ForEach(Array(a.members.enumerated()), id: \.offset) { index, member in
+                let me = isMe(index, in: a)
+                let ownerRow = isOwnerRow(index, in: a)
                 HStack(spacing: 8) {
                     Text(member)
-                        .font(.system(size: 13, weight: member == store.game.playerName ? .semibold : .regular))
-                        .foregroundColor(member == store.game.playerName ? BW.text : BW.subtext)
-                    if member == a.owner {
+                        .font(.system(size: 13, weight: me ? .semibold : .regular))
+                        .foregroundColor(me ? BW.text : BW.subtext)
+                    if ownerRow {
                         Text("OWNER")
                             .font(.system(size: 9, weight: .bold))
                             .foregroundColor(Self.straw)
                     }
                     Spacer()
-                    if isOwner, member != a.owner {
-                        Button(action: { store.removeMember(member) }) {
+                    if isOwner, !ownerRow {
+                        Button(action: { store.removeMember(at: index) }) {
                             Text("Remove")
                                 .font(.system(size: 13, weight: .semibold))
                                 .foregroundColor(BW.red)
@@ -188,7 +223,8 @@ struct AllianceScreen: View {
                     VStack(alignment: .leading, spacing: 0) {
                         ForEach(Array(a.board.enumerated().reversed()), id: \.offset) { index, post in
                             BoardRow(post: post,
-                                     isMine: post.author == store.game.playerName,
+                                     isMine: post.authorId.flatMap { id in store.userId.map { $0 == id } }
+                                        ?? (post.author == store.game.playerName),
                                      nowMs: context.date.timeIntervalSince1970 * 1000)
                             if index != 0 {
                                 Rectangle().fill(BW.stroke).frame(height: 1)

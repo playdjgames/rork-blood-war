@@ -294,6 +294,8 @@ struct AlliancePost: Codable, Equatable {
     var at: Double
     var author: String
     var text: String
+    /// Server user id of the author (online alliances only).
+    var authorId: String? = nil
 }
 
 /// The alliance record, or null. JSON: {name, code, owner, members, board}.
@@ -303,6 +305,18 @@ struct AllianceRecord: Codable, Equatable {
     var owner: String
     var members: [String]
     var board: [AlliancePost]
+    // Online fields — all optional so older saves decode unchanged.
+    /// Server user id of the owner.
+    var ownerId: String? = nil
+    /// Server user ids, parallel to `members`.
+    var memberIds: [String]? = nil
+    /// The alliance's server id; nil for device-only alliances.
+    var serverId: String? = nil
+    /// True while a create/join is queued offline and not yet confirmed.
+    var pendingSync: Bool? = nil
+
+    /// Lives on the server (or is queued to): shared across devices.
+    var isShared: Bool { serverId != nil || pendingSync == true }
 }
 
 // MARK: - Map
