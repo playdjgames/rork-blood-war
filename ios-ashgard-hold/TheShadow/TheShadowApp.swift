@@ -17,6 +17,7 @@ struct TheShadowApp: App {
         let key = Config.EXPO_PUBLIC_REVENUECAT_TEST_API_KEY
         if !key.isEmpty {
             Purchases.configure(withAPIKey: key)
+            Task { await PurchaseStore.shared.fetchOfferings() }
         }
         // If the key is empty (local/dev/Rork export without env injection),
         // skip configure entirely. PurchaseStore will simply show "Store not ready"
