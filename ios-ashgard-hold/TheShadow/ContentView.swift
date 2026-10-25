@@ -87,6 +87,10 @@ struct VictoryOverlay: View {
                         .foregroundColor(.white)
                     }
                 }
+                Text("Gold's not free — it's paid in blood.")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundColor(.orange)
+                    .padding(.top, 12)
             }
             .padding(24)
         }
