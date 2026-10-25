@@ -1,4 +1,4 @@
-# Blood War
+# Blood War: You Just Die
 
 Post-apocalyptic castle strategy game for iOS.
 

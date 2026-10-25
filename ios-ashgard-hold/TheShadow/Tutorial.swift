@@ -22,7 +22,7 @@ struct TutorialStep {
     /// hands the player the game.
     static let tour: [TutorialStep] = [
         TutorialStep(
-            title: "Blood War",
+            title: "Blood War: You Just Die",
             text: "Welcome, Lord. This is your hold — one castle, a meadow of lots, and a war for five holds. A short tour of the screens follows; you can skip it at any time.",
             tab: .castle
         ),

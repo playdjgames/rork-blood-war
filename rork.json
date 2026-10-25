@@ -2,11 +2,11 @@
   "$schema": "https://rork.com/schema/rork.json",
   "apps": [
     {
-      "name": "Blood War",
+      "name": "Blood War: You Just Die",
       "path": "ios-ashgard-hold",
       "framework": "swift",
       "settings": {
-        "displayName": "Blood War"
+        "displayName": "Blood War: You Just Die"
       }
     },
     {
