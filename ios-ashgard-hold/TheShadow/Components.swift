@@ -318,7 +318,7 @@ extension Color {
 struct RenameSheet: View {
     @EnvironmentObject var store: GameStore
     @Environment(\.dismiss) private var dismiss
-    private let purchases = PurchaseStore.shared
+    private var purchases: PurchaseStore { PurchaseStore.shared }
     @ObservedObject private var tutorial = TutorialManager.shared
     @State private var name = ""
     @State private var error: String?

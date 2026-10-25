@@ -37,10 +37,14 @@ final class PurchaseStore {
     var error: String?
 
     private init() {
-        Task { await fetchOfferings() }
+        // Do nothing on init. Offerings are fetched only after configure.
     }
 
     func fetchOfferings() async {
+        guard Purchases.isConfigured else {
+            self.error = "Store not ready"
+            return
+        }
         do {
             let offerings = try await Purchases.shared.offerings()
             var map: [String: Package] = [:]

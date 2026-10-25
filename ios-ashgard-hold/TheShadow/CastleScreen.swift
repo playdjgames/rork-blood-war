@@ -805,7 +805,7 @@ struct PlotBuildSheet: View {
 
 struct BuildingUpgradeSheet: View {
     @EnvironmentObject var store: GameStore
-    private let purchases = PurchaseStore.shared
+    private var purchases: PurchaseStore { PurchaseStore.shared }
     let buildingName: String
     var plot: Int? = nil
     @State private var error: String?
